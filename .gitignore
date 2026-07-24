@@ -1,3 +1,7 @@
 # Excluded folders
 src/
 models/
+
+# Runtime logs
+server.out.log
+server.err.log
