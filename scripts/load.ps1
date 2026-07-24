@@ -1,7 +1,7 @@
 # load.ps1 — switch the loaded model (starts the server first if needed).
-#   .\load.ps1              # numbered menu of all models
-#   .\load.ps1 gemma        # fuzzy match: load the model whose id contains "gemma"
-#   .\load.ps1 -Name lite   # same, explicit param
+#   .\scripts\load.ps1              # numbered menu of all models
+#   .\scripts\load.ps1 gemma        # fuzzy match: load the model whose id contains "gemma"
+#   .\scripts\load.ps1 -Name lite   # same, explicit param
 # With --models-max 1 this evicts the currently loaded model.
 param([string]$Name, [int]$Port = 8080)
 
@@ -11,7 +11,7 @@ $base = "http://127.0.0.1:$Port"
 $listening = (Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue).OwningProcess | Select-Object -Unique
 if (-not $listening) {
     Write-Host "Server not running on $Port — starting it..." -ForegroundColor Yellow
-    & D:\llama.cpp\start-llama.ps1 | Out-Null
+    & D:\llama.cpp\scripts\start-llama.ps1 | Out-Null
 }
 
 # 2. fetch model ids

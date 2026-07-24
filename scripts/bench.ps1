@@ -3,9 +3,9 @@
 # from models.ini, frees VRAM first, then runs llama-bench (prompt-processing + gen speed).
 #
 # Examples:
-#   .\bench.ps1                                  # interactive menu, default 512 prompt / 128 gen
-#   .\bench.ps1 -Model lmstudio-community__Qwen3-VL-8B-Instruct-GGUF
-#   .\bench.ps1 -PromptTokens 2048 -GenTokens 256 -Depth 4096 -Reps 5
+#   .\scripts\bench.ps1                                  # interactive menu, default 512 prompt / 128 gen
+#   .\scripts\bench.ps1 -Model lmstudio-community__Qwen3-VL-8B-Instruct-GGUF
+#   .\scripts\bench.ps1 -PromptTokens 2048 -GenTokens 256 -Depth 4096 -Reps 5
 param(
     [string]$Model,                 # model id (folder name); if omitted, prompts interactively
     [int]$PromptTokens = 512,       # -p  : tokens to process for prompt-eval (pp) test

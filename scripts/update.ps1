@@ -2,8 +2,8 @@
 # Stops the server first (a running llama-server.exe locks the binary), then git pull,
 # reconfigure + build under the VS dev environment, and restart if it was running.
 #
-#   .\update.ps1              # update, rebuild, restart server if it was up
-#   .\update.ps1 -NoRestart   # update + rebuild but leave the server stopped
+#   .\scripts\update.ps1              # update, rebuild, restart server if it was up
+#   .\scripts\update.ps1 -NoRestart   # update + rebuild but leave the server stopped
 param([switch]$NoRestart)
 
 $ErrorActionPreference = 'Stop'
@@ -16,7 +16,7 @@ function Get-Ver($exe) { if (Test-Path $exe) { (& $exe --version 2>&1 | Select-S
 
 # 1. remember if the server was running, then stop it (binary is locked while running)
 $wasUp = [bool]((Get-NetTCPConnection -LocalPort 8080 -State Listen -ErrorAction SilentlyContinue).OwningProcess)
-if ($wasUp) { Write-Host "Stopping server (binary is locked while running)..." -ForegroundColor Cyan; & D:\llama.cpp\stop-llama.ps1 | Out-Null }
+if ($wasUp) { Write-Host "Stopping server (binary is locked while running)..." -ForegroundColor Cyan; & D:\llama.cpp\scripts\stop-llama.ps1 | Out-Null }
 
 $oldVer = Get-Ver $server
 
@@ -42,5 +42,5 @@ Write-Host "  old: $oldVer"
 Write-Host "  new: $newVer" -ForegroundColor Green
 
 # 5. restart if it was running
-if ($wasUp -and -not $NoRestart) { Write-Host "`nRestarting server..." -ForegroundColor Cyan; & D:\llama.cpp\start-llama.ps1 }
-elseif ($wasUp)                  { Write-Host "`nServer was running but left stopped (-NoRestart). Start with start-llama.ps1." -ForegroundColor DarkGray }
+if ($wasUp -and -not $NoRestart) { Write-Host "`nRestarting server..." -ForegroundColor Cyan; & D:\llama.cpp\scripts\start-llama.ps1 }
+elseif ($wasUp)                  { Write-Host "`nServer was running but left stopped (-NoRestart). Start with scripts\start-llama.ps1." -ForegroundColor DarkGray }

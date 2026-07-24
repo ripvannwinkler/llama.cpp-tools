@@ -6,16 +6,18 @@ LM Studio-style on-demand model switching (router mode). Everything lives under 
 ## TL;DR — daily use
 
 ```powershell
-D:\llama.cpp\start-llama.ps1     # start (auto-runs at login too); prints model list
-D:\llama.cpp\stop-llama.ps1      # stop cleanly (frees all VRAM)
-D:\llama.cpp\restart-llama.ps1   # stop then start (picks up models.ini changes)
-D:\llama.cpp\unload-llama.ps1    # free VRAM but keep the server running (for another GPU task)
-D:\llama.cpp\load.ps1 <name>     # switch the loaded model (fuzzy match); starts server if down
+D:\llama.cpp\scripts\start-llama.ps1     # start (auto-runs at login too); prints model list
+D:\llama.cpp\scripts\stop-llama.ps1      # stop cleanly (frees all VRAM)
+D:\llama.cpp\scripts\restart-llama.ps1   # stop then start (picks up models.ini changes)
+D:\llama.cpp\scripts\unload-llama.ps1    # free VRAM but keep the server running (for another GPU task)
+D:\llama.cpp\scripts\load.ps1 <name>     # switch the loaded model (fuzzy match); starts server if down
 ```
 
 - API base URL: **`http://127.0.0.1:8080/v1`** (any non-empty API key)
 - Built-in web UI: open **`http://127.0.0.1:8080`** in a browser (has a model dropdown)
 - Switch models by setting the request's `model` field to an id from `GET /v1/models`, or use `load.ps1`
+- Windows tray app: `tray\LlamaTray.lnk` — GUI equivalent of these scripts (start/stop/restart/load/unload)
+  with a tray icon reflecting live server/model state; see `tray/LlamaTray/`.
 
 ## Layout
 
@@ -24,14 +26,16 @@ D:\llama.cpp\
   src\            cloned ggml-org/llama.cpp + build\bin\ (llama-server.exe, ...)
   models\         GGUFs, one folder per model:  <publisher>__<repo>\*.gguf
   models.ini      per-model config (context, batch/ubatch, KV quant, lite preset, ...)
-  start-llama.ps1 launch router server (hidden), waits for health
-  stop-llama.ps1      tree-kill the server (avoids orphaned VRAM)
-  restart-llama.ps1   stop then start (for config/model.ini reloads)
-  unload-llama.ps1    unload all models to free VRAM, server stays up
-  load.ps1        switch the loaded model (fuzzy match / menu), starts server if needed
-  bench.ps1        pick a model and benchmark it (llama-bench)
-  probe-ctx.ps1    find each model's max context via llama-bench (used to build models.ini)
-  update.ps1       git pull + recompile the CUDA build, then restart
+  scripts\
+    start-llama.ps1 launch router server (hidden), waits for health
+    stop-llama.ps1      tree-kill the server (avoids orphaned VRAM)
+    restart-llama.ps1   stop then start (for config/model.ini reloads)
+    unload-llama.ps1    unload all models to free VRAM, server stays up
+    load.ps1        switch the loaded model (fuzzy match / menu), starts server if needed
+    bench.ps1        pick a model and benchmark it (llama-bench)
+    probe-ctx.ps1    find each model's max context via llama-bench (used to build models.ini)
+    update.ps1       git pull + recompile the CUDA build, then restart
+  tray\           Windows tray app (GUI equivalent of the scripts above)
   README.md       this file
   server.out.log / server.err.log   runtime logs
 ```
@@ -45,8 +49,8 @@ D:\llama.cpp\
 ## Updating
 
 ```powershell
-D:\llama.cpp\update.ps1              # stop server, git pull, rebuild, restart
-D:\llama.cpp\update.ps1 -NoRestart   # update + rebuild but leave the server stopped
+D:\llama.cpp\scripts\update.ps1              # stop server, git pull, rebuild, restart
+D:\llama.cpp\scripts\update.ps1 -NoRestart   # update + rebuild but leave the server stopped
 ```
 
 `update.ps1` stops the server first (a running `llama-server.exe` locks the binary so the link step
@@ -97,7 +101,7 @@ that's why everything was flattened to `<publisher>__<repo>\`. Drop a new model 
 
 ## Per-model configuration — `models.ini`
 
-Referenced by `start-llama.ps1` via `--models-preset`. INI with a `[*]` global section plus one
+Referenced by `scripts\start-llama.ps1` via `--models-preset`. INI with a `[*]` global section plus one
 `[<model-id>]` section each. Keys are any `llama-server` flag **without dashes** (long form, short form,
 or `LLAMA_ARG_*` env name), e.g. `ctx-size` / `c`, `batch-size` / `b`, `cache-type-k` / `ctk`.
 
@@ -150,16 +154,16 @@ Both ids appear in `/v1/models`; no duplicated files on disk. Custom-section pat
 
 ### Finding a model's max context
 
-`probe-ctx.ps1` binary-searches each model's largest context that loads (via `llama-bench`, which self-exits
+`scripts\probe-ctx.ps1` binary-searches each model's largest context that loads (via `llama-bench`, which self-exits
 per probe). Its numbers are single-sequence and slightly optimistic vs the router, so always confirm by
 actually loading through the router — the values in `models.ini` are router-verified.
 
 ## Switching the loaded model
 
 ```powershell
-D:\llama.cpp\load.ps1            # numbered menu of all models
-D:\llama.cpp\load.ps1 gemma      # fuzzy match (careful: "lite" also matches "ab-lite-rated")
-D:\llama.cpp\load.ps1 8b-lite    # loads qwen3-vl-8b-lite
+D:\llama.cpp\scripts\load.ps1            # numbered menu of all models
+D:\llama.cpp\scripts\load.ps1 gemma      # fuzzy match (careful: "lite" also matches "ab-lite-rated")
+D:\llama.cpp\scripts\load.ps1 8b-lite    # loads qwen3-vl-8b-lite
 ```
 
 Starts the server if it isn't running, then POSTs `/models/load` and **waits** for the load to finish
@@ -172,7 +176,7 @@ a new `model` value (lazy auto-load). Under `--models-max 1` any of these evicts
 To reclaim VRAM without stopping the server:
 
 ```powershell
-D:\llama.cpp\unload-llama.ps1     # unloads all loaded models, server stays up
+D:\llama.cpp\scripts\unload-llama.ps1     # unloads all loaded models, server stays up
 ```
 
 `/models/unload` unloads **one named model per call** (there's no single "unload all" endpoint), so the
@@ -184,7 +188,7 @@ curl -X POST http://127.0.0.1:8080/models/unload -H "Content-Type: application/j
 
 **Caveat:** `--models-autoload` is on, so the **next API request reloads a model** and re-takes VRAM. While
 your other GPU task runs, don't send requests to `:8080`. For a hard guarantee that nothing reloads, use
-`stop-llama.ps1` instead and `start-llama.ps1` afterwards.
+`scripts\stop-llama.ps1` instead and `scripts\start-llama.ps1` afterwards.
 
 ## Benchmarking
 
@@ -193,9 +197,9 @@ applies that model's `cache-type-k/v` from `models.ini`, frees VRAM from the run
 (so it won't OOM), then reports prompt-processing (`pp`) and token-generation (`tg`) speed in t/s.
 
 ```powershell
-D:\llama.cpp\bench.ps1                                   # interactive menu (512 prompt / 128 gen)
-D:\llama.cpp\bench.ps1 -Model lmstudio-community__Qwen3-VL-8B-Instruct-GGUF
-D:\llama.cpp\bench.ps1 -PromptTokens 2048 -GenTokens 256 -Depth 4096 -Reps 5
+D:\llama.cpp\scripts\bench.ps1                                   # interactive menu (512 prompt / 128 gen)
+D:\llama.cpp\scripts\bench.ps1 -Model lmstudio-community__Qwen3-VL-8B-Instruct-GGUF
+D:\llama.cpp\scripts\bench.ps1 -PromptTokens 2048 -GenTokens 256 -Depth 4096 -Reps 5
 ```
 
 Params: `-Model <id>` (skip the menu), `-PromptTokens` (`-p`), `-GenTokens` (`-n`), `-Depth` (`-d`,
@@ -206,16 +210,23 @@ frees the server's VRAM first. Reading `pp` = prefill/prompt throughput, `tg` = 
 
 ## Auto-start at login
 
-Registered as a per-user Task Scheduler task **`llama-server`** (At-logon trigger) that runs
-`start-llama.ps1` hidden — same behavior LM Studio had. It only *starts* the server (no watchdog), so
-`stop-llama.ps1` stays in effect until the next login.
+Handled by the **tray app** (`tray\LlamaTray.lnk`, see below): a shortcut in the Startup folder launches
+it at login, and it starts the server itself if it isn't already running. This replaced the old
+`llama-server` Task Scheduler entry (unregistered) that used to run `start-llama.ps1` directly.
+
+## Tray app
+
+`tray\LlamaTray\` is a WinForms system tray app — a GUI equivalent of the scripts above. It shows a
+tray icon reflecting live state (stopped / running-no-model / model-loaded, with the model name in the
+tooltip) and a right-click menu for Start/Stop/Restart/Load Model/Unload All/Open Web UI. It talks to the
+router's REST API directly (`/health`, `/models`, `/models/load`, `/models/unload`) rather than shelling
+out to the `.ps1` scripts. Settings (port, paths, `models-max`) live in `tray\LlamaTray\appsettings.json`.
 
 ```powershell
-Start-ScheduledTask      -TaskName llama-server
-Disable-ScheduledTask    -TaskName llama-server   # stop auto-starting at login
-Enable-ScheduledTask     -TaskName llama-server
-Unregister-ScheduledTask -TaskName llama-server -Confirm:$false
+tray\LlamaTray.lnk   # launch the published exe (also what the Startup shortcut points at)
 ```
+
+To rebuild after changes: `dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true` from `tray\LlamaTray\`.
 
 ## opencode integration
 
@@ -226,8 +237,8 @@ models defined there (not raw `/v1/models`).
 ## Gotchas / lessons learned
 
 - **Stopping: never kill the port PID alone.** It orphans the model child process, which keeps holding
-  VRAM (saw ~30 GB stuck). Always use `stop-llama.ps1` (does `taskkill /PID <pid> /T /F`), or
-  `POST /models/unload` to free VRAM without stopping the server.
+  VRAM (saw ~30 GB stuck). Always use `scripts\stop-llama.ps1` (does `taskkill /PID <pid> /T /F`) or the
+  tray app's Stop, or `POST /models/unload` to free VRAM without stopping the server.
 - **Reasoning models return empty `content` if `max_tokens` is too small.** `gemma-4`, `Qwen3.6-*` are
   reasoning models: thinking goes to `message.reasoning_content`, the answer to `message.content`. With too
   few tokens the response hits the length limit while still thinking → empty `content`, `finish_reason=length`.
