@@ -202,11 +202,14 @@ internal sealed class TrayAppContext : ApplicationContext
 
         foreach (var id in ids)
         {
-            var item = new ToolStripMenuItem(id) { Tag = id, Checked = id == currentlyLoadedId };
+            var item = new ToolStripMenuItem(Truncate(id, 20)) { Tag = id, Checked = id == currentlyLoadedId };
             item.Click += async (_, _) => await LoadModel(id);
             _loadModelItem.DropDownItems.Add(item);
         }
     }
+
+    private static string Truncate(string text, int maxLength) =>
+        text.Length > maxLength ? text[..maxLength] + "…" : text;
 
     private void SetMenuEnabled(bool enabled)
     {
