@@ -45,6 +45,11 @@ Both key entries by the same model id used in `models.ini` (the `[section]`
 name). Adding, removing, or renaming a model in `models.ini` should be
 mirrored in both files' model lists as well, not just context-size edits.
 
+KV cache quant (`cache-type-k`/`cache-type-v`) is router-internal and does
+**not** need mirroring here on its own — these two configs only track
+`ctx-size` and the model list. Only touch them for a KV-quant-only change if
+it also changes the max `ctx-size` that fits in VRAM.
+
 ## Known-good config notes
 
 - `[*]` global defaults: `n-gpu-layers = 99`, `flash-attn = on`,
