@@ -157,7 +157,7 @@ internal sealed class TrayAppContext : ApplicationContext
             {
                 state = ServerState.ModelLoaded;
                 loadedId = loaded.Id;
-                tooltip = $"llama.cpp: {loaded.Id}{vramSuffix}";
+                tooltip = $"llama.cpp: running{vramSuffix}";
                 headerText = $"Running — {Truncate(loaded.Id, 20)}";
             }
             else
