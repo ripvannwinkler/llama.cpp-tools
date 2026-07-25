@@ -9,7 +9,12 @@
     <ApplicationIcon />
     <AssemblyName>LlamaTray</AssemblyName>
     <RootNamespace>LlamaTray</RootNamespace>
+    <PublishSingleFile>true</PublishSingleFile>
     <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <PropertyGroup Condition=" '$(Configuration)' == 'Release' ">
+    <PlatformTarget>x64</PlatformTarget>
   </PropertyGroup>
 
   <ItemGroup>
