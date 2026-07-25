@@ -16,6 +16,9 @@ internal sealed record ModelStatus(
 internal sealed record ModelsResponse(
     [property: JsonPropertyName("data")] List<ModelInfo> Data);
 
+internal sealed record SlotInfo(
+    [property: JsonPropertyName("is_processing")] bool IsProcessing);
+
 /// <summary>
 /// Native equivalent of start-llama.ps1 / stop-llama.ps1 / restart-llama.ps1 / load.ps1 / unload-llama.ps1.
 /// </summary>
@@ -72,6 +75,28 @@ internal sealed class ServerController
             var parsed = JsonSerializer.Deserialize<ModelsResponse>(json,
                 new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
             return parsed?.Data ?? new List<ModelInfo>();
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// True if any slot serving <paramref name="modelId"/> is currently processing a request;
+    /// null if the check couldn't be completed (treat as "unknown" — don't count as idle).
+    /// </summary>
+    public async Task<bool?> IsModelBusyAsync(string modelId, CancellationToken ct = default)
+    {
+        try
+        {
+            using var resp = await Http.GetAsync(
+                $"{ServerConfig.Current.BaseUrl}/slots?model={Uri.EscapeDataString(modelId)}", ct);
+            if (!resp.IsSuccessStatusCode) return null;
+            var json = await resp.Content.ReadAsStringAsync(ct);
+            var slots = JsonSerializer.Deserialize<List<SlotInfo>>(json,
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            return slots?.Any(s => s.IsProcessing) ?? false;
         }
         catch
         {
@@ -223,6 +248,22 @@ internal sealed class ServerController
         return (false, $"Load requested but '{modelId}' not confirmed loaded after 60s — check server.err.log.");
     }
 
+    public async Task<bool> UnloadModelAsync(string modelId)
+    {
+        try
+        {
+            var body = JsonSerializer.Serialize(new { model = modelId });
+            using var content = new StringContent(body, Encoding.UTF8, "application/json");
+            using var resp = await Http.PostAsync($"{ServerConfig.Current.BaseUrl}/models/unload", content);
+            return resp.IsSuccessStatusCode;
+        }
+        catch
+        {
+            // ignore — mirrors unload-llama.ps1 swallowing "not running" errors
+            return false;
+        }
+    }
+
     public async Task<(bool ok, string message)> UnloadAllAsync()
     {
         if (!await IsHealthyAsync())
@@ -235,17 +276,7 @@ internal sealed class ServerController
         foreach (var m in models)
         {
             if (m.Status?.Value != "loaded") continue;
-            try
-            {
-                var body = JsonSerializer.Serialize(new { model = m.Id });
-                using var content = new StringContent(body, Encoding.UTF8, "application/json");
-                using var resp = await Http.PostAsync($"{ServerConfig.Current.BaseUrl}/models/unload", content);
-                if (resp.IsSuccessStatusCode) unloaded.Add(m.Id);
-            }
-            catch
-            {
-                // ignore — mirrors unload-llama.ps1 swallowing "not running" errors
-            }
+            if (await UnloadModelAsync(m.Id)) unloaded.Add(m.Id);
         }
 
         await Task.Delay(500);

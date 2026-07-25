@@ -20,6 +20,9 @@ internal sealed class TrayAppContext : ApplicationContext
     private bool _stopRequested;
     private ServerState _lastState = ServerState.Stopped;
 
+    private DateTime? _lastActivityUtc;
+    private string? _lastActivityModelId;
+
     public TrayAppContext()
     {
         _headerItem = new ToolStripMenuItem("llama.cpp: checking...") { Enabled = false };
@@ -125,6 +128,57 @@ internal sealed class TrayAppContext : ApplicationContext
         }
     }
 
+    /// <summary>
+    /// Tracks per-model activity via /slots and unloads the model once it's been idle longer
+    /// than AutoUnloadMinutes. Returns true if it triggered an unload (caller should bail out
+    /// of the current refresh and let the next poll tick rebuild the UI from scratch).
+    /// </summary>
+    private async Task<bool> CheckAutoUnloadAsync(string loadedId)
+    {
+        var timeoutMinutes = ServerConfig.Current.AutoUnloadMinutes;
+        if (timeoutMinutes <= 0)
+        {
+            _lastActivityUtc = null;
+            _lastActivityModelId = null;
+            return false;
+        }
+
+        if (loadedId != _lastActivityModelId)
+        {
+            _lastActivityModelId = loadedId;
+            _lastActivityUtc = DateTime.UtcNow;
+        }
+
+        var busy = await _controller.IsModelBusyAsync(loadedId);
+        if (busy == true)
+        {
+            _lastActivityUtc = DateTime.UtcNow;
+        }
+
+        if (_lastActivityUtc == null ||
+            DateTime.UtcNow - _lastActivityUtc.Value < TimeSpan.FromMinutes(timeoutMinutes))
+        {
+            return false;
+        }
+
+        _busy = true;
+        SetMenuEnabled(false);
+        try
+        {
+            var ok = await _controller.UnloadModelAsync(loadedId);
+            if (ok) ShowBalloon("Auto-unload", $"Unloaded '{loadedId}' after {timeoutMinutes} min of inactivity.", true);
+        }
+        finally
+        {
+            _lastActivityUtc = null;
+            _lastActivityModelId = null;
+            _busy = false;
+            await RefreshStateAsync();
+        }
+
+        return true;
+    }
+
     private async Task RefreshStateAsync()
     {
         if (_busy)
@@ -166,6 +220,16 @@ internal sealed class TrayAppContext : ApplicationContext
                 tooltip = $"llama.cpp: running, no model loaded{vramSuffix}";
                 headerText = "Running — no model loaded";
             }
+        }
+
+        if (state == ServerState.ModelLoaded && loadedId != null)
+        {
+            if (await CheckAutoUnloadAsync(loadedId)) return;
+        }
+        else
+        {
+            _lastActivityUtc = null;
+            _lastActivityModelId = null;
         }
 
         _notifyIcon.Icon = IconFactory.Get(state);

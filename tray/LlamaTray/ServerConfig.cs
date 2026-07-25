@@ -12,6 +12,7 @@ internal sealed class AppConfig
     public string StdOutLog { get; init; } = @"D:\llama.cpp\server.out.log";
     public string StdErrLog { get; init; } = @"D:\llama.cpp\server.err.log";
     public int MaxModels { get; init; } = 1;
+    public int AutoUnloadMinutes { get; init; } = 15; // 0 = disabled
 
     public string BaseUrl => $"http://127.0.0.1:{Port}";
 }
