@@ -49,11 +49,18 @@ mirrored in both files' model lists as well, not just context-size edits.
 
 - `[*]` global defaults: `n-gpu-layers = 99`, `flash-attn = on`,
   `ctx-size = 8192` fallback.
-- Every per-model preset should set an explicit `ubatch-size` (`1024` has
-  been the working value across all tuned presets) — a preset missing this
-  falls back to llama.cpp's default (512), which at very large `ctx-size`
-  can turn model load into a long CPU-bound stall (high CPU, server never
-  becomes healthy/ready) rather than a fast GPU-bound one.
+- Every per-model preset should set an explicit `ubatch-size` — a preset
+  missing this falls back to llama.cpp's default (512), which at very large
+  `ctx-size` can turn model load into a long CPU-bound stall (high CPU,
+  server never becomes healthy/ready) rather than a fast GPU-bound one.
+  Bench-verified values: `2048` for the MoE presets (+8.6% prompt
+  processing vs 1024 on the 35B NVFP4), `1024` for the dense 27B (2048
+  gained only 1.3% there).
+- Speculative decoding: only the 27B's gguf ships MTP layers
+  (`spec-type = draft-mtp`, 71 -> 146 t/s greedy coding); the 35B NVFP4,
+  Ornith, and Gemma-4 quants had them stripped and exit on load if
+  `spec-type` is set. `--cache-reuse` is unsupported on all current models
+  (M-RoPE makes the KV cache unshiftable) — don't add it.
 - **CPU-pegging symptom from VS Code chat agent mode (not opencode, not the
   web UI/plain chat)**: any model called with `tools` + `tool_choice: auto`
   can appear to hang (~50% CPU, very slow, but not truly infinite). Root
