@@ -1,14 +1,18 @@
-"""Download a model from Hugging Face Hub and recombine sharded safetensors.
+"""Download a model from Hugging Face Hub and produce llama-server-ready GGUFs.
 
-Uses the `hf` CLI to download, then (if the model's weights are split into
-shards described by a model.safetensors.index.json) merges the shards into a
-single model.safetensors file so the local model directory ends up as a clean
-single-file model.
+Pipeline:
+  1. Download the repo via the `hf` CLI.
+  2. If the weights are sharded (model.safetensors.index.json present), merge
+     the shards into a single model.safetensors.
+  3. Convert to a bf16 GGUF via llama.cpp's convert_hf_to_gguf.py.
+  4. Export an mmproj GGUF too, if the model has a vision tower.
+  5. Quantize the bf16 GGUF (llama-quantize) to the requested type.
+  6. Delete everything except the final *.gguf file(s), so the output
+     directory holds only what llama-server needs.
 
-All tensors are held in memory at once before writing, matching how
-safetensors.torch.save_file works (it has no streaming/incremental API) -
-fine for models that fit comfortably in RAM, not suitable for very large
-ones.
+All tensors are held in memory at once during the shard-merge step, matching
+how safetensors.torch.save_file works (it has no streaming/incremental API) -
+fine for models that fit comfortably in RAM, not suitable for very large ones.
 """
 
 import argparse
@@ -21,6 +25,10 @@ from pathlib import Path
 
 from safetensors import safe_open
 from safetensors.torch import save_file
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+CONVERT_SCRIPT = REPO_ROOT / "src" / "convert_hf_to_gguf.py"
+LLAMA_QUANTIZE = REPO_ROOT / "src" / "build" / "bin" / "llama-quantize.exe"
 
 
 def find_hf_cli() -> str:
@@ -89,8 +97,57 @@ def merge_shards(out_dir: Path) -> None:
     print(f"[merge] Removed {len(shards_to_keys)} shard file(s) and the index.")
 
 
+def convert_to_gguf(out_dir: Path, model_name: str) -> Path:
+    if not CONVERT_SCRIPT.exists():
+        raise FileNotFoundError(f"convert_hf_to_gguf.py not found at {CONVERT_SCRIPT}")
+
+    bf16_path = out_dir / f"{model_name}-BF16.gguf"
+    cmd = [sys.executable, str(CONVERT_SCRIPT), str(out_dir), "--outtype", "bf16", "--outfile", str(bf16_path)]
+    print(f"[convert] {' '.join(cmd)}")
+    subprocess.run(cmd, check=True)
+    return bf16_path
+
+
+def export_mmproj(out_dir: Path, model_name: str) -> Path | None:
+    mmproj_path = out_dir / f"mmproj-{model_name}-F16.gguf"
+    cmd = [
+        sys.executable, str(CONVERT_SCRIPT), str(out_dir),
+        "--mmproj", "--outtype", "f16", "--outfile", str(mmproj_path),
+    ]
+    print(f"[mmproj] {' '.join(cmd)}")
+    result = subprocess.run(cmd)
+    if result.returncode != 0:
+        mmproj_path.unlink(missing_ok=True)
+        print("[mmproj] Model has no exportable vision tower (or export failed) - skipping.")
+        return None
+    return mmproj_path
+
+
+def quantize(bf16_path: Path, out_dir: Path, model_name: str, quant: str) -> Path:
+    if not LLAMA_QUANTIZE.exists():
+        raise FileNotFoundError(
+            f"llama-quantize not found at {LLAMA_QUANTIZE} - build llama.cpp first."
+        )
+    quant_path = out_dir / f"{model_name}-{quant}.gguf"
+    cmd = [str(LLAMA_QUANTIZE), str(bf16_path), str(quant_path), quant]
+    print(f"[quantize] {' '.join(cmd)}")
+    subprocess.run(cmd, check=True)
+    return quant_path
+
+
+def cleanup(out_dir: Path, keep: set[Path]) -> None:
+    for entry in out_dir.iterdir():
+        if entry in keep:
+            continue
+        if entry.is_dir():
+            shutil.rmtree(entry)
+        else:
+            entry.unlink()
+    print(f"[cleanup] {out_dir} now contains only: {', '.join(p.name for p in keep)}")
+
+
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("repo_id", help="Hugging Face repo id, e.g. org/model-name")
     parser.add_argument(
         "--out",
@@ -98,17 +155,33 @@ def main() -> None:
     )
     parser.add_argument("--revision", help="Branch/tag/commit to download")
     parser.add_argument("--token", help="Hugging Face token (for gated repos)")
+    parser.add_argument(
+        "--quant",
+        default="Q4_K_M",
+        help="llama-quantize target type for the final GGUF (default: Q4_K_M)",
+    )
     args = parser.parse_args()
 
-    if args.out:
-        out_dir = Path(args.out)
-    else:
-        model_name = args.repo_id.split("/")[-1]
-        out_dir = Path(__file__).resolve().parent.parent / "models" / model_name
+    model_name = args.repo_id.split("/")[-1]
+    out_dir = Path(args.out) if args.out else REPO_ROOT / "models" / model_name
     out_dir.mkdir(parents=True, exist_ok=True)
 
     download(args.repo_id, out_dir, args.revision, args.token)
     merge_shards(out_dir)
+
+    bf16_path = convert_to_gguf(out_dir, model_name)
+    mmproj_path = export_mmproj(out_dir, model_name)
+    quant_path = quantize(bf16_path, out_dir, model_name, args.quant)
+    bf16_path.unlink()
+
+    keep = {quant_path}
+    if mmproj_path:
+        keep.add(mmproj_path)
+    cleanup(out_dir, keep)
+
+    print(f"[done] {quant_path}")
+    if mmproj_path:
+        print(f"[done] {mmproj_path}")
 
 
 if __name__ == "__main__":
