@@ -103,3 +103,20 @@ mirrored in both files' model lists as well, not just context-size edits.
   `Qwen3.6-35B-A3B-NVFP4`. `toolCalling` enabled — untested for the
   CPU-pegging issue above; watch for it since agentic-coding models lean
   heavily on tool calls.
+- **Tray auto-unload false-triggering mid-session** — `LlamaTray`'s idle
+  auto-unload (`TrayAppContext.CheckAutoUnloadAsync`) originally judged
+  activity purely from `/slots`' `is_processing`, sampled once per 3s poll
+  tick. That's a point-in-time snapshot: any request that starts and fully
+  completes between two ticks (common for short prompts) is invisible to
+  it, so `_lastActivityUtc` could go stale for the whole `AutoUnloadMinutes`
+  window even with real, ongoing use — confirmed in `server.err.log`, where
+  real request bursts were interleaved with the tray's own 3s-cadence
+  `/slots` polling and easily missed by the snapshot check. Fixed by reading
+  the cumulative `n_decode_total` counter from each child's `/metrics`
+  instead (`ServerController.GetDecodeTotalAsync`) — since it's monotonic,
+  any increase between polls proves decoding happened sometime in that
+  window, no matter how brief. Requires `metrics = on` in the model's
+  preset (added to `[*]` in `models.ini`); `is_processing` is kept as a
+  fallback only for when `/metrics` is unavailable. If a model preset
+  outside `models.ini` (e.g. a per-model override) doesn't inherit `[*]`,
+  auto-unload silently falls back to the old lossy detection for it.

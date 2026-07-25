@@ -104,6 +104,37 @@ internal sealed class ServerController
         }
     }
 
+    /// <summary>
+    /// Cumulative llama_decode() call count for <paramref name="modelId"/>, scraped from its
+    /// Prometheus /metrics endpoint (requires "metrics = on" in the model's preset). This is a
+    /// monotonic counter, so comparing it across polls catches any decoding that happened between
+    /// two polls — unlike /slots' "is_processing", which only reflects the instant the poll landed
+    /// and can miss activity shorter than the poll interval. Null if metrics aren't available
+    /// (endpoint disabled, model not up, parse failure).
+    /// </summary>
+    public async Task<double?> GetDecodeTotalAsync(string modelId, CancellationToken ct = default)
+    {
+        try
+        {
+            using var resp = await Http.GetAsync(
+                $"{ServerConfig.Current.BaseUrl}/metrics?model={Uri.EscapeDataString(modelId)}", ct);
+            if (!resp.IsSuccessStatusCode) return null;
+            var text = await resp.Content.ReadAsStringAsync(ct);
+            foreach (var line in text.Split('\n'))
+            {
+                var trimmed = line.Trim();
+                if (!trimmed.StartsWith("llamacpp:n_decode_total ", StringComparison.Ordinal)) continue;
+                var value = trimmed["llamacpp:n_decode_total ".Length..].Trim();
+                if (double.TryParse(value, out var parsed)) return parsed;
+            }
+            return null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     public async Task<bool> IsHealthyAsync(CancellationToken ct = default)
     {
         try

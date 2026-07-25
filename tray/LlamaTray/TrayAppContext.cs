@@ -22,6 +22,7 @@ internal sealed class TrayAppContext : ApplicationContext
 
     private DateTime? _lastActivityUtc;
     private string? _lastActivityModelId;
+    private double? _lastDecodeTotal;
 
     public TrayAppContext()
     {
@@ -167,9 +168,17 @@ internal sealed class TrayAppContext : ApplicationContext
     }
 
     /// <summary>
-    /// Tracks per-model activity via /slots and unloads the model once it's been idle longer
-    /// than AutoUnloadMinutes. Returns true if it triggered an unload (caller should bail out
+    /// Tracks per-model activity and unloads the model once it's been idle longer than
+    /// AutoUnloadMinutes. Returns true if it triggered an unload (caller should bail out
     /// of the current refresh and let the next poll tick rebuild the UI from scratch).
+    ///
+    /// Activity is primarily detected via the cumulative n_decode_total counter from /metrics
+    /// (requires "metrics = on" in the model's preset): any increase since the last poll means
+    /// decoding happened at some point during that interval, however brief. /slots' "is_processing"
+    /// is only a point-in-time snapshot taken every poll tick — a request that starts and fully
+    /// completes between two ticks is invisible to it, so relying on it alone let short requests
+    /// go undetected and the model got unloaded mid-session. is_processing is kept as a fallback
+    /// for when /metrics is unavailable.
     /// </summary>
     private async Task<bool> CheckAutoUnloadAsync(string loadedId)
     {
@@ -178,6 +187,7 @@ internal sealed class TrayAppContext : ApplicationContext
         {
             _lastActivityUtc = null;
             _lastActivityModelId = null;
+            _lastDecodeTotal = null;
             return false;
         }
 
@@ -185,12 +195,27 @@ internal sealed class TrayAppContext : ApplicationContext
         {
             _lastActivityModelId = loadedId;
             _lastActivityUtc = DateTime.UtcNow;
+            _lastDecodeTotal = null;
         }
 
-        var busy = await _controller.IsModelBusyAsync(loadedId);
-        if (busy == true)
+        var decodeTotal = await _controller.GetDecodeTotalAsync(loadedId);
+        if (decodeTotal.HasValue)
         {
-            _lastActivityUtc = DateTime.UtcNow;
+            if (_lastDecodeTotal.HasValue && decodeTotal.Value > _lastDecodeTotal.Value)
+            {
+                _lastActivityUtc = DateTime.UtcNow;
+            }
+            _lastDecodeTotal = decodeTotal;
+        }
+        else
+        {
+            // /metrics unavailable (e.g. "metrics = on" missing from the preset) — fall back to
+            // the point-in-time /slots check, which can still miss short requests between polls.
+            var busy = await _controller.IsModelBusyAsync(loadedId);
+            if (busy == true)
+            {
+                _lastActivityUtc = DateTime.UtcNow;
+            }
         }
 
         if (
@@ -217,6 +242,7 @@ internal sealed class TrayAppContext : ApplicationContext
         {
             _lastActivityUtc = null;
             _lastActivityModelId = null;
+            _lastDecodeTotal = null;
             _busy = false;
             await RefreshStateAsync();
         }
@@ -276,6 +302,7 @@ internal sealed class TrayAppContext : ApplicationContext
         {
             _lastActivityUtc = null;
             _lastActivityModelId = null;
+            _lastDecodeTotal = null;
         }
 
         _notifyIcon.Icon = IconFactory.Get(state);
