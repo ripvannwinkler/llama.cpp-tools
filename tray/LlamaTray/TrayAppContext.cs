@@ -1,5 +1,5 @@
-using Microsoft.Win32;
 using System.Windows.Forms;
+using Microsoft.Win32;
 
 namespace LlamaTray;
 
@@ -26,20 +26,49 @@ internal sealed class TrayAppContext : ApplicationContext
     public TrayAppContext()
     {
         _headerItem = new ToolStripMenuItem("llama.cpp: checking...") { Enabled = false };
-        _startItem = new ToolStripMenuItem("Start Server", null, async (_, _) => await RunAction(_controller.StartAsync, "Start"));
-        _stopItem = new ToolStripMenuItem("Stop Server", null, async (_, _) => await RunAction(_controller.StopAsync, "Stop"));
-        _restartItem = new ToolStripMenuItem("Restart Server", null, async (_, _) => await RunAction(_controller.RestartAsync, "Restart"));
+        _startItem = new ToolStripMenuItem(
+            "Start Server",
+            null,
+            async (_, _) => await RunAction(_controller.StartAsync, "Start")
+        );
+        _stopItem = new ToolStripMenuItem(
+            "Stop Server",
+            null,
+            async (_, _) => await RunAction(_controller.StopAsync, "Stop")
+        );
+        _restartItem = new ToolStripMenuItem(
+            "Restart Server",
+            null,
+            async (_, _) => await RunAction(_controller.RestartAsync, "Restart")
+        );
         _loadModelItem = new ToolStripMenuItem("Load Model");
-        _unloadAllItem = new ToolStripMenuItem("Unload All Models", null, async (_, _) => await RunAction(_controller.UnloadAllAsync, "Unload All"));
+        _unloadAllItem = new ToolStripMenuItem(
+            "Unload All Models",
+            null,
+            async (_, _) => await RunAction(_controller.UnloadAllAsync, "Unload All")
+        );
 
-        var openWebUiItem = new ToolStripMenuItem("Open Web UI", null, (_, _) =>
-            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(ServerConfig.Current.BaseUrl) { UseShellExecute = true }));
+        var openWebUiItem = new ToolStripMenuItem(
+            "Open Web UI",
+            null,
+            (_, _) =>
+                System.Diagnostics.Process.Start(
+                    new System.Diagnostics.ProcessStartInfo(ServerConfig.Current.BaseUrl)
+                    {
+                        UseShellExecute = true,
+                    }
+                )
+        );
 
-        var exitItem = new ToolStripMenuItem("Exit", null, async (_, _) =>
-        {
-            await StopServerOnceAsync();
-            ExitThread();
-        });
+        var exitItem = new ToolStripMenuItem(
+            "Exit",
+            null,
+            async (_, _) =>
+            {
+                await StopServerOnceAsync();
+                ExitThread();
+            }
+        );
 
         var menu = new ContextMenuStrip();
         menu.Items.Add(_headerItem);
@@ -81,14 +110,22 @@ internal sealed class TrayAppContext : ApplicationContext
 
     private async Task StopServerOnceAsync()
     {
-        if (_stopRequested) return;
+        if (_stopRequested)
+            return;
         _stopRequested = true;
-        try { await _controller.StopAsync(); } catch { /* best-effort on exit */ }
+        try
+        {
+            await _controller.StopAsync();
+        }
+        catch
+        { /* best-effort on exit */
+        }
     }
 
     private async Task RunAction(Func<Task<(bool ok, string message)>> action, string label)
     {
-        if (_busy) return;
+        if (_busy)
+            return;
         _busy = true;
         SetMenuEnabled(false);
         try
@@ -109,7 +146,8 @@ internal sealed class TrayAppContext : ApplicationContext
 
     private async Task LoadModel(string modelId)
     {
-        if (_busy) return;
+        if (_busy)
+            return;
         _busy = true;
         SetMenuEnabled(false);
         try
@@ -155,8 +193,10 @@ internal sealed class TrayAppContext : ApplicationContext
             _lastActivityUtc = DateTime.UtcNow;
         }
 
-        if (_lastActivityUtc == null ||
-            DateTime.UtcNow - _lastActivityUtc.Value < TimeSpan.FromMinutes(timeoutMinutes))
+        if (
+            _lastActivityUtc == null
+            || DateTime.UtcNow - _lastActivityUtc.Value < TimeSpan.FromMinutes(timeoutMinutes)
+        )
         {
             return false;
         }
@@ -166,7 +206,12 @@ internal sealed class TrayAppContext : ApplicationContext
         try
         {
             var ok = await _controller.UnloadModelAsync(loadedId);
-            if (ok) ShowBalloon("Auto-unload", $"Unloaded '{loadedId}' after {timeoutMinutes} min of inactivity.", true);
+            if (ok)
+                ShowBalloon(
+                    "Auto-unload",
+                    $"Unloaded '{loadedId}' after {timeoutMinutes} min of inactivity.",
+                    true
+                );
         }
         finally
         {
@@ -212,7 +257,7 @@ internal sealed class TrayAppContext : ApplicationContext
                 state = ServerState.ModelLoaded;
                 loadedId = loaded.Id;
                 tooltip = $"llama.cpp: running{vramSuffix}";
-                headerText = $"Running — {Truncate(loaded.Id, 20)}";
+                headerText = $"Running — {Truncate(loaded.Id, 40)}";
             }
             else
             {
@@ -224,7 +269,8 @@ internal sealed class TrayAppContext : ApplicationContext
 
         if (state == ServerState.ModelLoaded && loadedId != null)
         {
-            if (await CheckAutoUnloadAsync(loadedId)) return;
+            if (await CheckAutoUnloadAsync(loadedId))
+                return;
         }
         else
         {
@@ -243,8 +289,9 @@ internal sealed class TrayAppContext : ApplicationContext
         _unloadAllItem.Enabled = state == ServerState.ModelLoaded;
         _loadModelItem.Enabled = true;
 
-        var ids = models?.Select(m => m.Id).Where(id => id != "default").ToList()
-                  ?? ModelCatalog.ReadModelIds();
+        var ids =
+            models?.Select(m => m.Id).Where(id => id != "default").ToList()
+            ?? ModelCatalog.ReadModelIds();
         if (state != _lastState || _loadModelItem.DropDownItems.Count != ids.Count)
         {
             RebuildLoadModelMenu(ids, loadedId);
@@ -263,13 +310,19 @@ internal sealed class TrayAppContext : ApplicationContext
         _loadModelItem.DropDownItems.Clear();
         if (ids.Count == 0)
         {
-            _loadModelItem.DropDownItems.Add(new ToolStripMenuItem("(no models found)") { Enabled = false });
+            _loadModelItem.DropDownItems.Add(
+                new ToolStripMenuItem("(no models found)") { Enabled = false }
+            );
             return;
         }
 
         foreach (var id in ids)
         {
-            var item = new ToolStripMenuItem(Truncate(id, 20)) { Tag = id, Checked = id == currentlyLoadedId };
+            var item = new ToolStripMenuItem(Truncate(id, 40))
+            {
+                Tag = id,
+                Checked = id == currentlyLoadedId,
+            };
             item.Click += async (_, _) => await LoadModel(id);
             _loadModelItem.DropDownItems.Add(item);
         }
