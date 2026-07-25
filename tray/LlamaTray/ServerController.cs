@@ -34,29 +34,23 @@ internal sealed class ServerController
     }
 
     /// <summary>
-    /// Dedicated GPU (VRAM) memory currently used by the running llama-server process, in GiB.
-    /// Returns null if the server isn't running or the usage can't be determined.
+    /// Total dedicated GPU (VRAM) memory currently committed system-wide, in GiB, summed
+    /// across all GPU adapters. Per-process attribution via "GPU Process Memory" proved
+    /// unreliable for CUDA compute workloads (llama-server showed 0 even under load), so
+    /// this reports the same system-wide figure Task Manager's Performance > GPU tab shows.
+    /// Returns null if the usage can't be determined.
     /// </summary>
     public double? GetVramUsageGiB()
     {
-        var pid = GetListeningPid(ServerConfig.Current.Port);
-        return pid.HasValue ? GetProcessVramUsageGiB(pid.Value) : null;
-    }
-
-    private static double? GetProcessVramUsageGiB(int pid)
-    {
         try
         {
-            if (!PerformanceCounterCategory.Exists("GPU Process Memory")) return null;
+            if (!PerformanceCounterCategory.Exists("GPU Adapter Memory")) return null;
 
-            var category = new PerformanceCounterCategory("GPU Process Memory");
-            var instanceNames = category.GetInstanceNames()
-                .Where(n => n.Contains($"pid_{pid}_", StringComparison.Ordinal));
-
+            var category = new PerformanceCounterCategory("GPU Adapter Memory");
             long totalBytes = 0;
-            foreach (var instance in instanceNames)
+            foreach (var instance in category.GetInstanceNames())
             {
-                using var counter = new PerformanceCounter("GPU Process Memory", "Dedicated Usage", instance, readOnly: true);
+                using var counter = new PerformanceCounter("GPU Adapter Memory", "Dedicated Usage", instance, readOnly: true);
                 totalBytes += (long)counter.NextValue();
             }
 
