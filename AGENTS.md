@@ -90,3 +90,16 @@ mirrored in both files' model lists as well, not just context-size edits.
     hits it: disabling `toolCalling` for it in `chatLanguageModels.json`
     (VS Code has a per-model toggle) is the safe lever; do not patch
     `src/` directly.
+- **`Ornith-1.0-35B`** (`deepreinforce-ai/Ornith-1.0-35B`, agentic coding
+  model, Qwen3.5-MoE-based) — an NVFP4 quant was tried first
+  (`s-batman/Ornith-1.0-35B-NVFP4-MTP-GGUF`, Blackwell-native, the 5090's CUDA
+  build supports it via `ggml-cuda/mmq-config-blackwell.cuh` +
+  `template-instances/mmq-instance-nvfp4.cu`) but the download was cancelled
+  before finishing. Settled on Unsloth's premade
+  `unsloth/Ornith-1.0-35B-GGUF` `Ornith-1.0-35B-UD-Q4_K_XL.gguf` (22.3GB —
+  note "Q4_K_XL" is Unsloth's own mixed-precision naming, not a native
+  `llama-quantize` type, so it has to be downloaded premade rather than
+  produced locally). Full 262144 ctx at q8_0 KV, same footprint class as
+  `Qwen3.6-35B-A3B-NVFP4`. `toolCalling` enabled — untested for the
+  CPU-pegging issue above; watch for it since agentic-coding models lean
+  heavily on tool calls.
