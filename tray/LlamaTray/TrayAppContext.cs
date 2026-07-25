@@ -149,18 +149,21 @@ internal sealed class TrayAppContext : ApplicationContext
         else
         {
             models = await _controller.GetModelsAsync();
+            var vram = await Task.Run(_controller.GetVramUsageGiB);
+            var vramSuffix = vram.HasValue ? $" ({vram.Value:0.0} GiB VRAM)" : "";
+
             var loaded = models?.FirstOrDefault(m => m.Status?.Value == "loaded");
             if (loaded != null)
             {
                 state = ServerState.ModelLoaded;
                 loadedId = loaded.Id;
-                tooltip = $"llama.cpp: {loaded.Id}";
+                tooltip = $"llama.cpp: {loaded.Id}{vramSuffix}";
                 headerText = $"Running — {loaded.Id}";
             }
             else
             {
                 state = ServerState.StartedNoModel;
-                tooltip = "llama.cpp: running, no model loaded";
+                tooltip = $"llama.cpp: running, no model loaded{vramSuffix}";
                 headerText = "Running — no model loaded";
             }
         }

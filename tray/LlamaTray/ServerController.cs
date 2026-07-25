@@ -33,6 +33,41 @@ internal sealed class ServerController
         return listeners.Any(l => l.Port == ServerConfig.Current.Port);
     }
 
+    /// <summary>
+    /// Dedicated GPU (VRAM) memory currently used by the running llama-server process, in GiB.
+    /// Returns null if the server isn't running or the usage can't be determined.
+    /// </summary>
+    public double? GetVramUsageGiB()
+    {
+        var pid = GetListeningPid(ServerConfig.Current.Port);
+        return pid.HasValue ? GetProcessVramUsageGiB(pid.Value) : null;
+    }
+
+    private static double? GetProcessVramUsageGiB(int pid)
+    {
+        try
+        {
+            if (!PerformanceCounterCategory.Exists("GPU Process Memory")) return null;
+
+            var category = new PerformanceCounterCategory("GPU Process Memory");
+            var instanceNames = category.GetInstanceNames()
+                .Where(n => n.Contains($"pid_{pid}_", StringComparison.Ordinal));
+
+            long totalBytes = 0;
+            foreach (var instance in instanceNames)
+            {
+                using var counter = new PerformanceCounter("GPU Process Memory", "Dedicated Usage", instance, readOnly: true);
+                totalBytes += (long)counter.NextValue();
+            }
+
+            return totalBytes / (1024.0 * 1024.0 * 1024.0);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     public async Task<List<ModelInfo>?> GetModelsAsync(CancellationToken ct = default)
     {
         try
