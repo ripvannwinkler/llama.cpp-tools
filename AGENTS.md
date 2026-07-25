@@ -33,12 +33,13 @@ list itself) changes in `models.ini`, update these too:
 
 - `C:\Users\Chris\AppData\Roaming\Code\User\chatLanguageModels.json` — VS
   Code chat model list. Each entry's `maxInputTokens` should equal
-  `ctx-size - maxOutputTokens` (output is consistently `8192` here) to match
-  the corresponding `models.ini` section.
+  `ctx-size - maxOutputTokens` (output is `8192` by default, but see the
+  Gemma exception below) to match the corresponding `models.ini` section.
 - `C:\Users\Chris\.config\opencode\opencode.json` — opencode CLI provider
   config (`provider.llama-local.models`). Each entry's `limit.context` should
   equal the corresponding `models.ini` section's `ctx-size` directly (no
-  output subtraction here).
+  output subtraction here); `limit.output` should match the same model's
+  `maxOutputTokens` in `chatLanguageModels.json`.
 
 Both key entries by the same model id used in `models.ini` (the `[section]`
 name). Adding, removing, or renaming a model in `models.ini` should be
@@ -57,3 +58,33 @@ mirrored in both files' model lists as well, not just context-size edits.
   to `196608` (matching the 27B preset) and given `ubatch-size = 1024` to
   fix a hang where `llama-server` pegged ~50% CPU and never responded to
   `/models/load`.
+- **Separate CPU-pegging symptom, only from VS Code chat agent mode (not
+  opencode, not the web UI/plain chat)**: any model called with `tools` +
+  `tool_choice: auto` can appear to hang (~50% CPU, very slow, but not truly
+  infinite). Confirmed on `Gemma-4-31B-it-QAT`, `Qwen3.6-35B-A3B-NVFP4`, and
+  `Qwen3.6-27B-Fable-Fusion-711-Uncensored-Heretic-MTP` — i.e. every model
+  in `models.ini` that had tool calling enabled in VS Code, not a
+  Gemma-specific issue. opencode was checked and does not exhibit this, so
+  its config was left untouched (`limit.output` stayed at `8192`). Root
+  cause is upstream, in the vendored `src/` (not a `models.ini` bug):
+  - With `tool_choice: auto` (what VS Code sends), llama.cpp's tool-call
+    grammar is *lazy* — it only starts constraining generation once the
+    model emits the literal trigger string `<|tool_call>` (see
+    `common/chat.cpp` `common_chat_params_init_gemma4`,
+    `data.grammar_lazy = !(has_response_format || (has_tools && tool_choice
+    == REQUIRED))`). If a model doesn't reliably produce that exact token,
+    generation runs completely unconstrained.
+  - Independently, on every streamed token the server re-parses the
+    *entire* accumulated response text from scratch
+    (`tools/server/server-task.cpp`
+    `server_task_result_cmpl_partial::update` → `common_chat_parse`), which
+    is O(n) per token and O(n²) total as the response grows.
+  - Combined: an untriggered, rambling response pays quadratic CPU cost
+    against the full output-token ceiling. This lives in upstream `src/`
+    and would be overwritten by `scripts/update.ps1`'s `git pull` + rebuild
+    if hand-patched — do not patch `src/` directly.
+  - **Fix applied**: in `chatLanguageModels.json`, `toolCalling` was set to
+    `false` for all three models (VS Code has a per-model tool-calling
+    toggle, so this is the clean fix there — no `maxOutputTokens` change
+    needed once tools are off). If this recurs on other models, disabling
+    `toolCalling` for them in `chatLanguageModels.json` is the safe lever.
