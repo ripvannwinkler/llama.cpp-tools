@@ -1,3 +1,4 @@
+using Microsoft.Win32;
 using System.Windows.Forms;
 
 namespace LlamaTray;
@@ -16,6 +17,7 @@ internal sealed class TrayAppContext : ApplicationContext
     private readonly ToolStripMenuItem _unloadAllItem;
 
     private bool _busy;
+    private bool _stopRequested;
     private ServerState _lastState = ServerState.Stopped;
 
     public TrayAppContext()
@@ -30,7 +32,11 @@ internal sealed class TrayAppContext : ApplicationContext
         var openWebUiItem = new ToolStripMenuItem("Open Web UI", null, (_, _) =>
             System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(ServerConfig.Current.BaseUrl) { UseShellExecute = true }));
 
-        var exitItem = new ToolStripMenuItem("Exit", null, (_, _) => ExitThread());
+        var exitItem = new ToolStripMenuItem("Exit", null, async (_, _) =>
+        {
+            await StopServerOnceAsync();
+            ExitThread();
+        });
 
         var menu = new ContextMenuStrip();
         menu.Items.Add(_headerItem);
@@ -60,7 +66,21 @@ internal sealed class TrayAppContext : ApplicationContext
         _pollTimer.Tick += async (_, _) => await RefreshStateAsync();
         _pollTimer.Start();
 
+        SystemEvents.SessionEnding += OnSessionEnding;
+
         _ = RefreshStateAsync();
+    }
+
+    private void OnSessionEnding(object? sender, SessionEndingEventArgs e)
+    {
+        StopServerOnceAsync().GetAwaiter().GetResult();
+    }
+
+    private async Task StopServerOnceAsync()
+    {
+        if (_stopRequested) return;
+        _stopRequested = true;
+        try { await _controller.StopAsync(); } catch { /* best-effort on exit */ }
     }
 
     private async Task RunAction(Func<Task<(bool ok, string message)>> action, string label)
@@ -207,6 +227,7 @@ internal sealed class TrayAppContext : ApplicationContext
 
     protected override void ExitThreadCore()
     {
+        SystemEvents.SessionEnding -= OnSessionEnding;
         _pollTimer.Stop();
         _pollTimer.Dispose();
         _notifyIcon.Visible = false;
