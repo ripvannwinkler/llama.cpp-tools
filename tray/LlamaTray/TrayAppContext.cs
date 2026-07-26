@@ -15,6 +15,7 @@ internal sealed class TrayAppContext : ApplicationContext
     private readonly ToolStripMenuItem _restartItem;
     private readonly ToolStripMenuItem _loadModelItem;
     private readonly ToolStripMenuItem _unloadAllItem;
+    private readonly ToolStripMenuItem _settingsItem;
 
     private bool _busy;
     private bool _stopRequested;
@@ -71,6 +72,12 @@ internal sealed class TrayAppContext : ApplicationContext
             }
         );
 
+        _settingsItem = new ToolStripMenuItem(
+            "Settings...",
+            null,
+            (_, _) => ShowSettingsDialogAsync()
+        );
+
         var menu = new ContextMenuStrip();
         menu.Items.Add(_headerItem);
         menu.Items.Add(new ToolStripSeparator());
@@ -82,6 +89,8 @@ internal sealed class TrayAppContext : ApplicationContext
         menu.Items.Add(_unloadAllItem);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(openWebUiItem);
+        menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add(_settingsItem);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(exitItem);
 
@@ -373,6 +382,53 @@ internal sealed class TrayAppContext : ApplicationContext
         _notifyIcon.BalloonTipText = string.IsNullOrWhiteSpace(text) ? " " : text;
         _notifyIcon.BalloonTipIcon = isInfo ? ToolTipIcon.Info : ToolTipIcon.Warning;
         _notifyIcon.ShowBalloonTip(4000);
+    }
+
+    private async void ShowSettingsDialogAsync()
+    {
+        if (_busy)
+            return;
+
+        var before = ServerConfig.Current;
+        var dialog = new SettingsForm(before);
+        dialog.ShowDialog(null);
+
+        if (dialog.DialogResult != DialogResult.OK || dialog.SavedConfig == null)
+            return;
+
+        var after = dialog.SavedConfig;
+
+        bool needsRestart =
+            after.Port != before.Port ||
+            after.ServerExe != before.ServerExe ||
+            after.ModelsDir != before.ModelsDir ||
+            after.PresetIni != before.PresetIni ||
+            after.MaxModels != before.MaxModels ||
+            after.StdOutLog != before.StdOutLog ||
+            after.StdErrLog != before.StdErrLog;
+
+        if (needsRestart)
+        {
+            var result = MessageBox.Show(
+                "Some settings require a server restart to take effect.\nRestart now?",
+                "Restart Required",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Question,
+                MessageBoxDefaultButton.Button1);
+
+            if (result == DialogResult.Yes)
+            {
+                await RunAction(_controller.RestartAsync, "Restart");
+            }
+            else
+            {
+                ShowBalloon("Settings saved", "Restart the server to apply pending changes.", true);
+            }
+        }
+        else
+        {
+            ShowBalloon("Settings saved", "Changes applied.", true);
+        }
     }
 
     protected override void ExitThreadCore()
