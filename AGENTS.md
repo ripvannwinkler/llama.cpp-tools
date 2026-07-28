@@ -64,8 +64,19 @@ it also changes the max `ctx-size` that fits in VRAM.
 - Speculative decoding: only the 27B's gguf ships MTP layers
   (`spec-type = draft-mtp`, 71 -> 146 t/s greedy coding); the 35B NVFP4,
   Ornith, and Gemma-4 quants had them stripped and exit on load if
-  `spec-type` is set. `--cache-reuse` is unsupported on all current models
-  (M-RoPE makes the KV cache unshiftable) — don't add it.
+  `spec-type` is set.
+- `cache-reuse = 256` is enabled on the long-context presets and confirmed
+  to help: on `Qwen3.6-27B-UD-Q4_K_XL`, re-sending an ~8k-token prompt with
+  a couple of tokens prepended (simulating a shifted/edited conversation
+  history) reused the entire prior cache (cache_n 8012, prompt_n 4) instead
+  of reprocessing from scratch — prompt eval dropped from ~2.4s to ~67ms.
+  Verified with both requests pinned to the same slot via `id_slot` (the
+  router has multiple slots; an unpinned A/B test can land on different
+  slots and look like reuse isn't working when it actually is). The
+  earlier note here claiming `--cache-reuse` was unsupported on all
+  current models (M-RoPE unshiftable) was wrong, or at least is not true
+  for the current dense/MoE text presets — only Qwen3-VL/Qwen2.5-VL (M-RoPE
+  vision models) would plausibly still hit that limitation, untested.
 - **CPU-pegging symptom from VS Code chat agent mode (not opencode, not the
   web UI/plain chat)**: any model called with `tools` + `tool_choice: auto`
   can appear to hang (~50% CPU, very slow, but not truly infinite). Root
