@@ -40,6 +40,11 @@ list itself) changes in `models.ini`, update these too:
   equal the corresponding `models.ini` section's `ctx-size` directly (no
   output subtraction here); `limit.output` should match the same model's
   `maxOutputTokens` in `chatLanguageModels.json`.
+- `E:\01-personal\pi.dev\models.json` — Pi agent harness config
+  (`provider.llama.cpp.models`). Each entry's `contextWindow` should equal
+  the corresponding `models.ini` section's `ctx-size` directly; `maxTokens`
+  should match the same model's `maxOutputTokens` in
+  `chatLanguageModels.json`.
 
 Both key entries by the same model id used in `models.ini` (the `[section]`
 name). Adding, removing, or renaming a model in `models.ini` should be
