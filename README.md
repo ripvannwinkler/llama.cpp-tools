@@ -81,7 +81,7 @@ verified per-model config (max context that loads on the 32 GB card — see `mod
 
 | Model id (use in API `model` field) | Type | ctx | KV | ubatch |
 |---|---|---|---|---|
-| `knoopx__Qwen3.6-35B-A3B-NVFP4-GGUF` | 35B MoE, NVFP4 | 262144 | q8_0 | 1024 |
+| `Qwen3.6-35B-A3B-UD-Q4_K_XL_MTP` | 35B MoE, UD-Q4_K_XL, MTP + vision | 196608 | q8_0 | 2048 |
 | `Richarlie__Qwen3.6-27B-Fable-Fusion-711-...-MTP-GGUF` | 27B dense, reasoning, Q4_K_M | 262144 | q8_0 | 1024 |
 | `lmstudio-community__gemma-4-31B-it-QAT-GGUF` | 31B, reasoning, QAT Q4_0 | 262144 | **q5_1** | 512 |
 | `lmstudio-community__Qwen3-VL-8B-Instruct-GGUF` | 8B vision, Q8_0 | 262144 | q8_0 | 1024 |
