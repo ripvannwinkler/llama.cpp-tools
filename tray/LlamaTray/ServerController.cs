@@ -85,13 +85,18 @@ internal sealed class ServerController
     /// <summary>
     /// True if any slot serving <paramref name="modelId"/> is currently processing a request;
     /// null if the check couldn't be completed (treat as "unknown" — don't count as idle).
+    ///
+    /// autoload=false is REQUIRED: in router mode a model-scoped request normally auto-loads the
+    /// model to serve it (--models-autoload), so probing /slots for an unloaded model would reload
+    /// it — this is what caused a just-unloaded model to come back ~1s later. With autoload=false
+    /// the router returns "model is not loaded" instead, and this method returns null. Do not remove.
     /// </summary>
     public async Task<bool?> IsModelBusyAsync(string modelId, CancellationToken ct = default)
     {
         try
         {
             using var resp = await Http.GetAsync(
-                $"{ServerConfig.Current.BaseUrl}/slots?model={Uri.EscapeDataString(modelId)}", ct);
+                $"{ServerConfig.Current.BaseUrl}/slots?model={Uri.EscapeDataString(modelId)}&autoload=false", ct);
             if (!resp.IsSuccessStatusCode) return null;
             var json = await resp.Content.ReadAsStringAsync(ct);
             var slots = JsonSerializer.Deserialize<List<SlotInfo>>(json,
@@ -111,13 +116,18 @@ internal sealed class ServerController
     /// two polls — unlike /slots' "is_processing", which only reflects the instant the poll landed
     /// and can miss activity shorter than the poll interval. Null if metrics aren't available
     /// (endpoint disabled, model not up, parse failure).
+    ///
+    /// autoload=false is REQUIRED: in router mode a model-scoped request normally auto-loads the
+    /// model to serve it (--models-autoload), so probing /metrics for an unloaded model would reload
+    /// it — this is what caused a just-unloaded model to come back ~1s later. With autoload=false
+    /// the router returns "model is not loaded" instead, and this method returns null. Do not remove.
     /// </summary>
     public async Task<double?> GetDecodeTotalAsync(string modelId, CancellationToken ct = default)
     {
         try
         {
             using var resp = await Http.GetAsync(
-                $"{ServerConfig.Current.BaseUrl}/metrics?model={Uri.EscapeDataString(modelId)}", ct);
+                $"{ServerConfig.Current.BaseUrl}/metrics?model={Uri.EscapeDataString(modelId)}&autoload=false", ct);
             if (!resp.IsSuccessStatusCode) return null;
             var text = await resp.Content.ReadAsStringAsync(ct);
             foreach (var line in text.Split('\n'))
