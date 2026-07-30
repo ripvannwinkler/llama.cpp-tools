@@ -23,6 +23,8 @@ internal sealed class TrayAppContext : ApplicationContext
     private ServerState _lastState = ServerState.Stopped;
     private Operation _activeOperation = Operation.None;
     private int _animFrame;
+    private string? _lastLoadedModelId;
+    private DateTime? _apiAnimationEndUtc;
 
     private DateTime? _lastActivityUtc;
     private string? _lastActivityModelId;
@@ -374,7 +376,33 @@ internal sealed class TrayAppContext : ApplicationContext
                 item.Checked = string.Equals((string?)item.Tag, loadedId, StringComparison.Ordinal);
         }
 
+        // Detect model-level transitions (API-initiated loads/swaps/unloads).
+        // Only animate when not already busy — tray button actions start their own animation.
+        if (!_busy)
+        {
+            var modelSwapped = loadedId != _lastLoadedModelId;
+            var modelAppeared = _lastLoadedModelId == null && loadedId != null;
+            var modelDisappeared = _lastLoadedModelId != null && loadedId == null;
+
+            if (modelSwapped || modelAppeared || modelDisappeared)
+            {
+                _activeOperation = Operation.Loading;
+                _animFrame = 0;
+                _animTimer.Start();
+                _apiAnimationEndUtc = DateTime.UtcNow + TimeSpan.FromSeconds(3);
+            }
+        }
+
+        // Stop API animation once the 3 s grace window expires.
+        if (_apiAnimationEndUtc.HasValue && DateTime.UtcNow >= _apiAnimationEndUtc.Value)
+        {
+            _animTimer.Stop();
+            _activeOperation = Operation.None;
+            _apiAnimationEndUtc = null;
+        }
+
         _lastState = state;
+        _lastLoadedModelId = loadedId;
     }
 
     private void RebuildLoadModelMenu(List<string> ids, string? currentlyLoadedId)
