@@ -8,6 +8,7 @@ internal sealed class TrayAppContext : ApplicationContext
     private readonly ServerController _controller = new();
     private readonly NotifyIcon _notifyIcon;
     private readonly System.Windows.Forms.Timer _pollTimer;
+    private readonly System.Windows.Forms.Timer _animTimer;
 
     private readonly ToolStripMenuItem _headerItem;
     private readonly ToolStripMenuItem _startItem;
@@ -20,10 +21,19 @@ internal sealed class TrayAppContext : ApplicationContext
     private bool _busy;
     private bool _stopRequested;
     private ServerState _lastState = ServerState.Stopped;
+    private Operation _activeOperation = Operation.None;
+    private int _animFrame;
 
     private DateTime? _lastActivityUtc;
     private string? _lastActivityModelId;
     private double? _lastDecodeTotal;
+
+    private enum Operation
+    {
+        None,
+        Loading,
+        Unloading,
+    }
 
     public TrayAppContext()
     {
@@ -47,7 +57,7 @@ internal sealed class TrayAppContext : ApplicationContext
         _unloadAllItem = new ToolStripMenuItem(
             "Unload All Models",
             null,
-            async (_, _) => await RunAction(_controller.UnloadAllAsync, "Unload All")
+            async (_, _) => await RunAction(_controller.UnloadAllAsync, "Unload All", Operation.Unloading)
         );
 
         var openWebUiItem = new ToolStripMenuItem(
@@ -108,6 +118,9 @@ internal sealed class TrayAppContext : ApplicationContext
         _pollTimer.Tick += async (_, _) => await RefreshStateAsync();
         _pollTimer.Start();
 
+        _animTimer = new System.Windows.Forms.Timer { Interval = 100 };
+        _animTimer.Tick += (_, _) => CycleAnimationFrame();
+
         SystemEvents.SessionEnding += OnSessionEnding;
 
         _ = RefreshStateAsync();
@@ -132,12 +145,16 @@ internal sealed class TrayAppContext : ApplicationContext
         }
     }
 
-    private async Task RunAction(Func<Task<(bool ok, string message)>> action, string label)
+    private async Task RunAction(Func<Task<(bool ok, string message)>> action, string label, Operation op = Operation.None)
     {
         if (_busy)
             return;
         _busy = true;
         SetMenuEnabled(false);
+        _activeOperation = op;
+        _animFrame = 0;
+        if (op != Operation.None)
+            _animTimer.Start();
         try
         {
             var (ok, message) = await action();
@@ -149,6 +166,11 @@ internal sealed class TrayAppContext : ApplicationContext
         }
         finally
         {
+            if (op != Operation.None)
+            {
+                _animTimer.Stop();
+                _activeOperation = Operation.None;
+            }
             _busy = false;
             await RefreshStateAsync();
         }
@@ -160,6 +182,9 @@ internal sealed class TrayAppContext : ApplicationContext
             return;
         _busy = true;
         SetMenuEnabled(false);
+        _activeOperation = Operation.Loading;
+        _animFrame = 0;
+        _animTimer.Start();
         try
         {
             var (ok, message) = await _controller.LoadModelAsync(modelId);
@@ -171,6 +196,8 @@ internal sealed class TrayAppContext : ApplicationContext
         }
         finally
         {
+            _animTimer.Stop();
+            _activeOperation = Operation.None;
             _busy = false;
             await RefreshStateAsync();
         }
@@ -237,6 +264,9 @@ internal sealed class TrayAppContext : ApplicationContext
 
         _busy = true;
         SetMenuEnabled(false);
+        _activeOperation = Operation.Unloading;
+        _animFrame = 0;
+        _animTimer.Start();
         try
         {
             var ok = await _controller.UnloadModelAsync(loadedId);
@@ -249,6 +279,8 @@ internal sealed class TrayAppContext : ApplicationContext
         }
         finally
         {
+            _animTimer.Stop();
+            _activeOperation = Operation.None;
             _lastActivityUtc = null;
             _lastActivityModelId = null;
             _lastDecodeTotal = null;
@@ -314,7 +346,11 @@ internal sealed class TrayAppContext : ApplicationContext
             _lastDecodeTotal = null;
         }
 
-        _notifyIcon.Icon = IconFactory.Get(state);
+        var animIcon = GetMaybeAnimatedIcon(state);
+        if (animIcon is not null)
+            _notifyIcon.Icon = animIcon;
+        else
+            _notifyIcon.Icon = IconFactory.Get(state);
         // NotifyIcon.Text has a 63-char limit.
         _notifyIcon.Text = tooltip.Length > 63 ? tooltip[..63] : tooltip;
         _headerItem.Text = headerText;
@@ -384,6 +420,25 @@ internal sealed class TrayAppContext : ApplicationContext
         _notifyIcon.ShowBalloonTip(4000);
     }
 
+    /// <summary>
+    /// Advances the animation frame counter and updates the tray icon when an
+    /// operation (load / unload) is in progress.
+    /// </summary>
+    private void CycleAnimationFrame()
+    {
+        _animFrame = (_animFrame + 1) % IconFactory.TotalAnimationFrames;
+        var icon = GetMaybeAnimatedIcon(_lastState);
+        if (icon is not null)
+            _notifyIcon.Icon = icon;
+    }
+
+    private Icon? GetMaybeAnimatedIcon(ServerState state)
+    {
+        if (_activeOperation == Operation.None)
+            return null;
+        return IconFactory.GetAnimatedFrame(state, _animFrame, IconFactory.TotalAnimationFrames);
+    }
+
     private async void ShowSettingsDialogAsync()
     {
         if (_busy)
@@ -436,6 +491,8 @@ internal sealed class TrayAppContext : ApplicationContext
         SystemEvents.SessionEnding -= OnSessionEnding;
         _pollTimer.Stop();
         _pollTimer.Dispose();
+        _animTimer.Stop();
+        _animTimer.Dispose();
         _notifyIcon.Visible = false;
         _notifyIcon.Dispose();
         base.ExitThreadCore();
