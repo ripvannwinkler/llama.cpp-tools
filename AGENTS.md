@@ -26,10 +26,10 @@ config, the tray app, and the external tools that mirror its model list.
 
 ## Related tools — update whenever model params change
 
-Two external configs outside this repo duplicate each model's id and
+Several external configs outside this repo duplicate each model's id and
 **context size** so that other tools can talk to the same router
 (`http://127.0.0.1:8080/v1`). Whenever a model's `ctx-size` (or the model
-list itself) changes in `models.ini`, update these too:
+list itself) changes in `models.ini`, update all of these too:
 
 - `C:\Users\Chris\AppData\Roaming\Code\User\chatLanguageModels.json` — VS
   Code chat model list. Each entry's `maxInputTokens` should equal
@@ -40,20 +40,25 @@ list itself) changes in `models.ini`, update these too:
   equal the corresponding `models.ini` section's `ctx-size` directly (no
   output subtraction here); `limit.output` should match the same model's
   `maxOutputTokens` in `chatLanguageModels.json`.
-- `E:\01-personal\pi.dev\models.json` — Pi agent harness config
-  (`provider.llama.cpp.models`). Each entry's `contextWindow` should equal
-  the corresponding `models.ini` section's `ctx-size` directly; `maxTokens`
-  should match the same model's `maxOutputTokens` in
-  `chatLanguageModels.json`.
+- `E:\01-personal\pi.dev\models.json` — Pi agent harness config, dev/docker
+  copy (`baseUrl` `host.docker.internal:8080`, `provider.llama.cpp.models`).
+  Each entry's `contextWindow` should equal the corresponding `models.ini`
+  section's `ctx-size` directly; `maxTokens` should match the same model's
+  `maxOutputTokens` in `chatLanguageModels.json`.
+- `C:\Users\Chris\.pi\agent\models.json` — Pi agent harness config, live/native
+  install (`baseUrl` `http://127.0.0.1:8080/v1`, `provider.llama.cpp.models`).
+  Same mapping as the dev copy above: `contextWindow` = the section's `ctx-size`
+  directly; `maxTokens` per-tool (currently a flat `32768`). Keep it in sync with
+  the dev copy — both mirror the same model list.
 
-Both key entries by the same model id used in `models.ini` (the `[section]`
-name). Adding, removing, or renaming a model in `models.ini` should be
-mirrored in both files' model lists as well, not just context-size edits.
+All of these key entries by the same model id used in `models.ini` (the
+`[section]` name). Adding, removing, or renaming a model in `models.ini` should
+be mirrored in every file's model list as well, not just context-size edits.
 
 KV cache quant (`cache-type-k`/`cache-type-v`) is router-internal and does
-**not** need mirroring here on its own — these two configs only track
-`ctx-size` and the model list. Only touch them for a KV-quant-only change if
-it also changes the max `ctx-size` that fits in VRAM.
+**not** need mirroring here on its own — these configs only track `ctx-size`
+and the model list. Only touch them for a KV-quant-only change if it also
+changes the max `ctx-size` that fits in VRAM.
 
 ## Known-good config notes
 
