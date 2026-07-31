@@ -7,10 +7,14 @@ param([string]$Name, [int]$Port = 8080)
 
 $base = "http://127.0.0.1:$Port"
 
-# 1. start the server if it isn't listening
-$listening = (Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue).OwningProcess | Select-Object -Unique
-if (-not $listening) {
-    Write-Host "Server not running on $Port — starting it..." -ForegroundColor Yellow
+# 1. start the server if it isn't healthy (probe /health, not the TCP table —
+#    Get-NetTCPConnection can transiently report nothing right after a boot).
+#    Any /health response counts as "running": during a model load the status is
+#    "loading model", and we still want to reuse that server rather than restart.
+$healthy = $false
+try { Invoke-RestMethod "$base/health" -TimeoutSec 3 | Out-Null; $healthy = $true } catch { $healthy = $false }
+if (-not $healthy) {
+    Write-Host "Server not responding on $Port — starting it..." -ForegroundColor Yellow
     & D:\llama.cpp\scripts\start-llama.ps1 | Out-Null
 }
 
