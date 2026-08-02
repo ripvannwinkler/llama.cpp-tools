@@ -24,6 +24,16 @@ config, the tray app, and the external tools that mirror its model list.
 - `server.out.log` / `server.err.log` — router stdout/stderr, next to this
   file (paths configured in `tray/LlamaTray/appsettings.json`).
 
+## Downloading models
+
+Use `hf download <repo> <file> --local-dir D:\llama.cpp\models\<model-id>` rather
+than raw `curl` — `HF_HOME` is already set to `d:\.huggingface`, so it picks up
+the cache and the configured token (faster/authenticated where that matters,
+e.g. gated repos) automatically with no extra flags. Verify the finished file's
+size against the repo's authoritative `Content-Length` (`curl -sIL <url>`)
+regardless of which method downloaded it — don't trust a clean exit code alone,
+a dropped connection can leave a silently truncated file.
+
 ## Related tools — update whenever model params change
 
 Several external configs outside this repo duplicate each model's id and
