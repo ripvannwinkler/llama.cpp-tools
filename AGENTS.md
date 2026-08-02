@@ -35,11 +35,6 @@ list itself) changes in `models.ini`, update all of these too:
   Code chat model list. Each entry's `maxInputTokens` should equal
   `ctx-size - maxOutputTokens` (output is `8192` by default) to match the
   corresponding `models.ini` section.
-- `C:\Users\Chris\.config\opencode\opencode.json` — opencode CLI provider
-  config (`provider.llama-local.models`). Each entry's `limit.context` should
-  equal the corresponding `models.ini` section's `ctx-size` directly (no
-  output subtraction here); `limit.output` should match the same model's
-  `maxOutputTokens` in `chatLanguageModels.json`.
 - `E:\01-personal\pi.dev\models.json` — Pi agent harness config, dev/docker
   copy (`baseUrl` `host.docker.internal:8080`, `provider.llama.cpp.models`).
   Each entry's `contextWindow` should equal the corresponding `models.ini`
