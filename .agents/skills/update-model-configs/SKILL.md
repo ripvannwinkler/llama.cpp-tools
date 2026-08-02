@@ -4,10 +4,13 @@ description: >
   Sync the external tool configs that mirror this repo's llama.cpp router model
   list after models.ini changes. Use whenever a model's ctx-size changes, or a
   model is added / removed / renamed in models.ini — it propagates the model id
-  list and context size into the VS Code chat, opencode, and Pi (and any other
-  related-tool) configs listed in AGENTS.md. Trigger on: "update model configs",
+  list and context size into the VS Code chat model list (and any other
+  related-tool configs listed in AGENTS.md). Trigger on: "update model configs",
   "sync the related tools", "I changed models.ini", "propagate ctx-size", after
   editing a preset's ctx-size or the [section] list.
+  NOTE: Pi and opencode configs are now automatic — pi's built-in llama.cpp
+  router provider reads ids/ctx live from the router, and opencode has its own
+  plugin — so neither is hand-edited here (see AGENTS.md).
 ---
 
 # update-model-configs
@@ -41,11 +44,19 @@ rely solely on the list baked in below. As of this writing the targets are:
 | Config file | Model list path | Context field | Value = |
 |---|---|---|---|
 | `C:\Users\Chris\AppData\Roaming\Code\User\chatLanguageModels.json` (VS Code chat) | `[0].models[]`, keyed by `id` | `maxInputTokens` | `ctx-size − maxOutputTokens` (that entry's own output, default `8192`) |
-| `C:\Users\Chris\.config\opencode\opencode.json` (opencode) | `provider.llama-local.models{}`, keyed by object key | `limit.context` | `ctx-size` directly |
-| `E:\01-personal\pi.dev\models.json` (Pi harness, dev/docker copy) | `providers.["llama.cpp"].models[]`, keyed by `id` | `contextWindow` | `ctx-size` directly |
-| `C:\Users\Chris\.pi\agent\models.json` (Pi harness, live/native install) | `providers.["llama.cpp"].models[]`, keyed by `id` | `contextWindow` | `ctx-size` directly |
 
-All three key entries by the **exact** `models.ini` section name (including
+> **Pi targets removed (2026-08):** the two Pi configs
+> (`E:\01-personal\pi.dev\models.json` and `C:\Users\Chris\.pi\agent\models.json`)
+> no longer carry a model list — pi's built-in llama.cpp router provider
+> (`/llama` + `/model`) auto-discovers ids, input modalities, and ctx-size from
+> the router, so models.ini ctx edits need no pi-side mirroring. Leave both files
+> at `{ "providers": {} }`. If a model needs thinking restored
+> (`reasoning: true` + `qwen-chat-template`), that's a one-time `modelOverrides`
+> entry in the pi `models.json`, not part of this sync.
+> **opencode removed too:** `C:\Users\Chris\.config\opencode\opencode.json` is
+> handled by a separate opencode plugin, not by this skill.
+
+All entries key by the **exact** `models.ini` section name (including
 spaces/parens, e.g. `Qwen3-VL-8B-Instruct (Lite, Uncensored)`).
 
 ## Procedure
@@ -62,13 +73,10 @@ spaces/parens, e.g. `Qwen3-VL-8B-Instruct (Lite, Uncensored)`).
      - Renamed → treat as remove-old + add-new (ids must match exactly).
    - **Context field.** Set it per the mapping table above for every entry.
 3. **Output-token fields are NOT derived from models.ini.** `maxOutputTokens`
-   (VS Code), `limit.output` (opencode), and `maxTokens` (Pi) encode deliberate
-   per-tool choices and currently differ across the three files. Leave them as
-   they are. The one exception: VS Code's `maxInputTokens` **is** derived
-   (`ctx-size − maxOutputTokens`), so recompute it whenever either input
-   changes, using that entry's existing `maxOutputTokens`. AGENTS.md notes
-   opencode/Pi output "should match" VS Code — if you want to enforce that,
-   confirm with the user first; do not silently rewrite output values.
+   encodes a deliberate per-tool choice. Leave it as it is. The one exception:
+   VS Code's `maxInputTokens` **is** derived (`ctx-size − maxOutputTokens`), so
+   recompute it whenever either input changes, using that entry's existing
+   `maxOutputTokens`.
 4. Edit the JSON in place with targeted replacements — do not regenerate/reindent
    the whole file. Preserve existing key order, 2-space indentation, and any
    blank lines so the diff stays minimal.
@@ -80,11 +88,8 @@ After editing, re-read each target and confirm:
   missing).
 - Each entry's context field equals the expected value from the mapping table.
 
-Report a table: `model id | models.ini ctx-size | VS Code maxInputTokens |
-opencode limit.context | Pi contextWindow (both Pi files)`, so the user can
-eyeball that everything lines up (VS Code column = ctx − that model's output).
-The two Pi configs (dev/docker + live/native) should show the same
-`contextWindow` per model.
+Report a table: `model id | models.ini ctx-size | VS Code maxInputTokens`
+(VS Code column = ctx − that model's output).
 
 ## Notes
 
