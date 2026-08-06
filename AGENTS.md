@@ -82,10 +82,13 @@ changes the max `ctx-size` that fits in VRAM.
   Bench-verified values: `2048` for the MoE presets (+8.6% prompt
   processing vs 1024 on the 35B NVFP4), `1024` for the dense 27B (2048
   gained only 1.3% there).
-- Speculative decoding: only the 27B's gguf ships MTP layers
-  (`spec-type = draft-mtp`, 71 -> 146 t/s greedy coding); the 35B NVFP4,
-  Ornith, and Gemma-4 quants had them stripped and exit on load if
-  `spec-type` is set.
+- Speculative decoding: the 27B's gguf ships MTP layers built-in
+  (`spec-type = draft-mtp`, 71 -> 146 t/s greedy coding). The 35B NVFP4
+  and Ornith exit on load if `spec-type` is set (MTP was stripped in those
+  quants). The unsloth Gemma-4-31B-it GGUF ships a separate
+  `mtp-gemma-4-31B-it.gguf` drafter (Q8_0) that works with any quant of
+  the same model — configure via `spec-draft-model` + `spec-type = draft-mtp`
+  + `spec-draft-n-max 4` (70 -> 101 tok/s on Q4_K_M).
 - `cache-reuse = 256` is enabled on the long-context presets and confirmed
   to help: on `Qwen3.6-27B-UD-Q4_K_XL`, re-sending an ~8k-token prompt with
   a couple of tokens prepended (simulating a shifted/edited conversation
