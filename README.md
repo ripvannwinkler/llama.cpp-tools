@@ -34,7 +34,7 @@ D:\llama.cpp\
     load.ps1        switch the loaded model (fuzzy match / menu), starts server if needed
     bench.ps1        pick a model and benchmark it (llama-bench)
     probe-ctx.ps1    find each model's max context via llama-bench (used to build models.ini)
-    update.ps1       sync src onto nvfp4-quantize + recompile the CUDA build, then restart
+    update.ps1       git pull + recompile the CUDA build, then restart
   tray\           Windows tray app (GUI equivalent of the scripts above)
   README.md       this file
   server.out.log / server.err.log   runtime logs
@@ -49,21 +49,13 @@ D:\llama.cpp\
 ## Updating
 
 ```powershell
-D:\llama.cpp\scripts\update.ps1              # sync, rebuild, restart server if it was up
-D:\llama.cpp\scripts\update.ps1 -NoRestart   # sync + rebuild but leave the server stopped
-D:\llama.cpp\scripts\update.ps1 -SkipPull    # rebuild the current source as-is, no fetch/merge
+D:\llama.cpp\scripts\update.ps1              # stop server, git pull, rebuild, restart
+D:\llama.cpp\scripts\update.ps1 -NoRestart   # update + rebuild but leave the server stopped
 ```
 
-`src` is kept on the local **`nvfp4-quantize`** branch (NVFP4 quantize output type + chunked
-gated-delta-net CUDA kernels). That branch is never pushed, so updating is a merge, not a pull:
-`update.ps1` checks the branch out if it isn't active, fast-forwards local `master` from `origin`,
-merges `master` into `nvfp4-quantize`, stops the server (a running `llama-server.exe` locks the
-binary so the link step would fail), does an **incremental** CUDA rebuild in the VS dev
-environment, prints branch + old→new version, and restarts the server if it was running.
-
-Uncommitted changes in `src` block both the switch and the merge — commit or stash first. If the
-merge conflicts, the script aborts it and stops **without** rebuilding; resolve by hand in
-`D:\llama.cpp\src` and re-run.
+`update.ps1` stops the server first (a running `llama-server.exe` locks the binary so the link step
+would fail), pulls latest source, does an **incremental** CUDA rebuild in the VS dev environment,
+prints old→new version, and restarts the server if it was running.
 
 ## Building / rebuilding (manual)
 
@@ -73,8 +65,7 @@ merge conflicts, the script aborts it and stops **without** rebuilding; resolve 
 
 ```sh
 cd D:\llama.cpp\src
-git checkout nvfp4-quantize
-git fetch origin master:master && git merge master
+git pull
 cmake -B build -G Ninja -DGGML_CUDA=ON -DCMAKE_BUILD_TYPE=Release -DCMAKE_CUDA_ARCHITECTURES=120
 cmake --build build --config Release -j
 ```

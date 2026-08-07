@@ -120,11 +120,9 @@ changes the max `ctx-size` that fits in VRAM.
     `server_task_result_cmpl_partial::update` → `common_chat_parse`), which
     is O(n) per token and O(n²) total as the response grows.
   - Combined: an untriggered, rambling response pays quadratic CPU cost
-    against the full output-token ceiling. This lives in upstream `src/`,
-    which sits on the local `nvfp4-quantize` branch; `scripts/update.ps1`
-    merges upstream `master` into that branch, so any fix must be
-    *committed* there to survive a rebuild. Uncommitted edits to `src/`
-    block the update outright — never leave `src/` dirty.
+    against the full output-token ceiling. This lives in upstream `src/`
+    and would be overwritten by `scripts/update.ps1`'s `git pull` + rebuild
+    if hand-patched — do not patch `src/` directly.
   - This was hit by `Gemma-4-31B-it-QAT` (a QAT quant) and
     `Qwen3.6-27B-Fable-Fusion-711-Uncensored-Heretic-MTP` (an abliterated
     fine-tune) — both categories of model tend to reproduce trigger tokens
