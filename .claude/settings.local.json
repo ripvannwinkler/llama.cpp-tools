@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git status *)",
+      "Bash(git -C /d/llama.cpp submodule status)",
+      "Bash(cd *)",
+      "Bash(python gguf-py/gguf/scripts/gguf_dump.py --json /d/llama.cpp/models/Gemma-4-31B-it-QAT/gemma-4-31B-it-QAT-Q4_0.gguf)",
+      "Bash(D:/llama.cpp/src/build/bin/llama-server.exe *)",
+      "Bash(git *)",
+      "Bash(.venv/Scripts/python.exe gguf-py/gguf/scripts/gguf_dump.py --no-tensors \"D:\\\\llama.cpp\\\\models\\\\Ternary-Bonsai-27B-Q2_0\\\\Ternary-Bonsai-27B-dspark-Q4_1.gguf\")",
+      "Read(//c/Users/Chris/AppData/Roaming/Code/User/**)",
+      "Bash(echo \"===EXIT $?===\")",
+      "Read(//c/Users/Chris/AppData/Roaming/Code/User\" 2>/dev/**)",
+      "Read(//c/Users/Chris/.config/opencode/**)",
+      "Read(//c/Users/Chris/.config/opencode\" 2>/dev/**)",
+      "Bash(./src/.venv/Scripts/gguf-dump.exe --no-tensors \"models/Qwen3.6-35B-A3B-UD-Q4_K_XL_MTP/Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf\")",
+      "Bash(where pi *)",
+      "Bash(npm root *)"
+    ]
+  }
+}
