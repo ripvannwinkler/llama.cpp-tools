@@ -30,6 +30,15 @@ internal sealed class TrayAppContext : ApplicationContext
     private string? _lastActivityModelId;
     private double? _lastDecodeTotal;
 
+    // Status popup
+    private readonly TooltipForm _statusPopup;
+    private readonly System.Windows.Forms.Timer _popupHideTimer;
+    private bool _popupVisible;
+    private Dictionary<string, Dictionary<string, string>> _cachedPresets = new();
+    private string? _presetsModelId; // cached presets are valid for this model id only
+    private string? _lastLoadedModelIdForPopup; // track if model changed while popup is visible
+    private Rectangle _menuBounds; // last-known menu screen bounds (captured in Opened event)
+
     private enum Operation
     {
         None,
@@ -40,6 +49,7 @@ internal sealed class TrayAppContext : ApplicationContext
     public TrayAppContext()
     {
         _headerItem = new ToolStripMenuItem("llama.cpp: checking...") { Enabled = false };
+        _headerItem.Click += (_, _) => ShowStatusPopup();
         _startItem = new ToolStripMenuItem(
             "Start Server",
             null,
@@ -59,7 +69,8 @@ internal sealed class TrayAppContext : ApplicationContext
         _unloadAllItem = new ToolStripMenuItem(
             "Unload All Models",
             null,
-            async (_, _) => await RunAction(_controller.UnloadAllAsync, "Unload All", Operation.Unloading)
+            async (_, _) =>
+                await RunAction(_controller.UnloadAllAsync, "Unload All", Operation.Unloading)
         );
 
         var openWebUiItem = new ToolStripMenuItem(
@@ -91,6 +102,20 @@ internal sealed class TrayAppContext : ApplicationContext
         );
 
         var menu = new ContextMenuStrip();
+        menu.Opening += (_, _) =>
+        {
+            // Hide the status popup if it's visible — the user is opening the menu.
+            if (_popupVisible)
+                HideStatusPopup();
+        };
+        menu.Opened += (_, _) =>
+        {
+            // Capture the menu's screen bounds after layout is complete.
+            // ContextMenuStrip.PointToScreen converts its (0,0) to screen coords.
+            var topLeft = menu.PointToScreen(Point.Empty);
+            _menuBounds = new Rectangle(topLeft, menu.Size);
+        };
+
         menu.Items.Add(_headerItem);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(_startItem);
@@ -115,6 +140,12 @@ internal sealed class TrayAppContext : ApplicationContext
         };
 
         RebuildLoadModelMenu(ModelCatalog.ReadModelIds(), currentlyLoadedId: null);
+
+        _statusPopup = new TooltipForm();
+
+        // Auto-hide the popup after a timeout.
+        _popupHideTimer = new System.Windows.Forms.Timer { Interval = 500, Enabled = false };
+        _popupHideTimer.Tick += (_, _) => HideStatusPopup();
 
         _pollTimer = new System.Windows.Forms.Timer { Interval = 3000 };
         _pollTimer.Tick += async (_, _) => await RefreshStateAsync();
@@ -147,7 +178,11 @@ internal sealed class TrayAppContext : ApplicationContext
         }
     }
 
-    private async Task RunAction(Func<Task<(bool ok, string message)>> action, string label, Operation op = Operation.None)
+    private async Task RunAction(
+        Func<Task<(bool ok, string message)>> action,
+        string label,
+        Operation op = Operation.None
+    )
     {
         if (_busy)
             return;
@@ -307,6 +342,7 @@ internal sealed class TrayAppContext : ApplicationContext
         string headerText;
         string? loadedId = null;
         List<ModelInfo>? models = null;
+        double? vramGiB = null;
 
         if (!listening)
         {
@@ -317,8 +353,8 @@ internal sealed class TrayAppContext : ApplicationContext
         else
         {
             models = await _controller.GetModelsAsync();
-            var vram = await Task.Run(_controller.GetVramUsageGiB);
-            var vramSuffix = vram.HasValue ? $" ({vram.Value:0.0} GiB VRAM)" : "";
+            vramGiB = await Task.Run(_controller.GetVramUsageGiB);
+            var vramSuffix = vramGiB.HasValue ? $" ({vramGiB.Value:0.0} GiB VRAM)" : "";
 
             var loaded = models?.FirstOrDefault(m => m.Status?.Value == "loaded");
             if (loaded != null)
@@ -355,7 +391,10 @@ internal sealed class TrayAppContext : ApplicationContext
             _notifyIcon.Icon = IconFactory.Get(state);
         // NotifyIcon.Text has a 63-char limit.
         _notifyIcon.Text = tooltip.Length > 63 ? tooltip[..63] : tooltip;
-        _headerItem.Text = headerText;
+
+        // Update header text — add click hint when a model is loaded.
+        _headerItem.Text =
+            state == ServerState.ModelLoaded ? headerText + " (click for details)" : headerText;
 
         _startItem.Enabled = state == ServerState.Stopped;
         _stopItem.Enabled = state != ServerState.Stopped;
@@ -401,8 +440,155 @@ internal sealed class TrayAppContext : ApplicationContext
             _apiAnimationEndUtc = null;
         }
 
+        // Enable/disable the header item based on model state.
+        if (state == ServerState.ModelLoaded && loadedId != null)
+        {
+            _headerItem.Enabled = true;
+            // Re-parse presets when the model id changes.
+            if (loadedId != _presetsModelId)
+            {
+                _cachedPresets = IniParser.Parse(ServerConfig.Current.PresetIni);
+                _presetsModelId = loadedId;
+            }
+            // If the popup is visible and the model changed underneath it (unlikely but possible
+            // via external API call), update the popup content.
+            if (_popupVisible && _lastLoadedModelIdForPopup != loadedId)
+            {
+                var info = BuildTooltipInfo();
+                if (info != null)
+                {
+                    // Reposition relative to last known menu bounds.
+                    var anchor = new Point(_menuBounds.Right + 4, _menuBounds.Y);
+                    _statusPopup.ShowWith(info, anchor);
+                }
+                _lastLoadedModelIdForPopup = loadedId;
+            }
+        }
+        else
+        {
+            _headerItem.Enabled = false;
+            if (_popupVisible)
+                HideStatusPopup();
+        }
+
         _lastState = state;
         _lastLoadedModelId = loadedId;
+    }
+
+    /// <summary>Toggle the status popup on header click.</summary>
+    private void ShowStatusPopup()
+    {
+        // Re-parse presets each time — the config may have changed since the popup was last shown.
+        // The INI file is tiny so this is negligible overhead.
+        if (_lastLoadedModelId != null)
+        {
+            _cachedPresets = IniParser.Parse(ServerConfig.Current.PresetIni);
+            _presetsModelId = _lastLoadedModelId;
+        }
+
+        // Position the popup to the right of the context menu.
+        // If that would go off-screen, put it above instead.
+        var screen = Screen.PrimaryScreen!.Bounds;
+        Point anchor;
+        if (_menuBounds.Right + 200 <= screen.Right)
+        {
+            // Room to the right — place it there.
+            anchor = new Point(_menuBounds.Right + 4, _menuBounds.Y);
+        }
+        else
+        {
+            // No room to the right — place it above the menu.
+            anchor = new Point(_menuBounds.X, _menuBounds.Y - 4);
+        }
+
+        if (_popupVisible)
+        {
+            // Already visible — update with fresh data and extend timeout.
+            var info = BuildTooltipInfo();
+            if (info != null)
+                _statusPopup.ShowWith(info, anchor);
+            _popupHideTimer.Stop();
+            _popupHideTimer.Interval = 6000;
+            _popupHideTimer.Start();
+        }
+        else
+        {
+            var info = BuildTooltipInfo();
+            if (info != null)
+            {
+                _statusPopup.ShowWith(info, anchor);
+                _popupVisible = true;
+                _lastLoadedModelIdForPopup = _lastLoadedModelId;
+                _popupHideTimer.Interval = 6000;
+                _popupHideTimer.Start();
+            }
+        }
+    }
+
+    /// <summary>Hide the status popup and reset state.</summary>
+    private void HideStatusPopup()
+    {
+        _statusPopup.Hide();
+        _popupVisible = false;
+        _popupHideTimer.Stop();
+        _lastLoadedModelIdForPopup = null;
+    }
+
+    /// <summary>
+    /// Builds a ModelStatusInfo from the cached INI presets for the currently loaded model.
+    /// Returns null if we don't have enough data.
+    /// </summary>
+    private ModelStatusInfo? BuildTooltipInfo()
+    {
+        if (_lastLoadedModelId == null || _lastState != ServerState.ModelLoaded)
+            return null;
+
+        var id = _lastLoadedModelId;
+        var resolve = (string key) => IniParser.Resolve(_cachedPresets, id, key);
+
+        // Format ctx-size with K/M suffix for readability.
+        var rawCtx = resolve("ctx-size");
+        var ctxDisplay =
+            rawCtx != null && long.TryParse(rawCtx, out var ctxVal)
+                ? FormatLargeNumber(ctxVal)
+                : rawCtx;
+
+        // Format batch/ubatch.
+        var rawBatch = resolve("batch-size");
+        var batchDisplay =
+            rawBatch != null && long.TryParse(rawBatch, out var bVal)
+                ? FormatLargeNumber(bVal)
+                : rawBatch;
+
+        var rawUbatch = resolve("ubatch-size");
+        var ubatchDisplay =
+            rawUbatch != null && long.TryParse(rawUbatch, out var uVal)
+                ? FormatLargeNumber(uVal)
+                : rawUbatch;
+
+        // VRAM from live perf counter.
+        var vramStr = _controller.GetVramUsageGiB()?.ToString("0.0");
+
+        return new ModelStatusInfo(
+            ModelId: id,
+            CtxSize: ctxDisplay,
+            BatchSize: batchDisplay,
+            UbatchSize: ubatchDisplay,
+            CacheTypeK: resolve("cache-type-k"),
+            CacheTypeV: resolve("cache-type-v"),
+            NgpuLayers: resolve("n-gpu-layers"),
+            VramGiB: vramStr
+        );
+    }
+
+    /// <summary>Format a large number with K/M suffix using binary units (e.g. 262144 → "256K").</summary>
+    private static string FormatLargeNumber(long value)
+    {
+        if (value >= 1_048_576)
+            return (value / 1048576) + "M";
+        if (value >= 1024)
+            return (value / 1024) + "K";
+        return value.ToString();
     }
 
     private void RebuildLoadModelMenu(List<string> ids, string? currentlyLoadedId)
@@ -482,13 +668,13 @@ internal sealed class TrayAppContext : ApplicationContext
         var after = dialog.SavedConfig;
 
         bool needsRestart =
-            after.Port != before.Port ||
-            after.ServerExe != before.ServerExe ||
-            after.ModelsDir != before.ModelsDir ||
-            after.PresetIni != before.PresetIni ||
-            after.MaxModels != before.MaxModels ||
-            after.StdOutLog != before.StdOutLog ||
-            after.StdErrLog != before.StdErrLog;
+            after.Port != before.Port
+            || after.ServerExe != before.ServerExe
+            || after.ModelsDir != before.ModelsDir
+            || after.PresetIni != before.PresetIni
+            || after.MaxModels != before.MaxModels
+            || after.StdOutLog != before.StdOutLog
+            || after.StdErrLog != before.StdErrLog;
 
         if (needsRestart)
         {
@@ -497,7 +683,8 @@ internal sealed class TrayAppContext : ApplicationContext
                 "Restart Required",
                 MessageBoxButtons.YesNo,
                 MessageBoxIcon.Question,
-                MessageBoxDefaultButton.Button1);
+                MessageBoxDefaultButton.Button1
+            );
 
             if (result == DialogResult.Yes)
             {
@@ -521,6 +708,10 @@ internal sealed class TrayAppContext : ApplicationContext
         _pollTimer.Dispose();
         _animTimer.Stop();
         _animTimer.Dispose();
+        _popupHideTimer.Stop();
+        _popupHideTimer.Dispose();
+        _statusPopup.Hide();
+        _statusPopup.Dispose();
         _notifyIcon.Visible = false;
         _notifyIcon.Dispose();
         base.ExitThreadCore();
