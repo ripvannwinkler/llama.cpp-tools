@@ -127,13 +127,24 @@ changes the max `ctx-size` that fits in VRAM.
     `Qwen3.6-27B-Fable-Fusion-711-Uncensored-Heretic-MTP` (an abliterated
     fine-tune) — both categories of model tend to reproduce trigger tokens
     less reliably than a stock instruct release (e.g.
-    `Qwen3.6-35B-A3B-NVFP4`, unaffected). The 31B was removed entirely
-    (`models.ini`, both external configs, and the gguf on disk deleted) as
-    it kept hitting this; it was replaced by `Gemma-4-26B-A4B-it-QAT`
+    `Qwen3.6-35B-A3B-NVFP4`, unaffected). The original unsloth 31B QAT was
+    removed (`models.ini`, both external configs, and the gguf on disk
+    deleted) as it kept hitting this; it was replaced by
+    `Gemma-4-26B-A4B-it-QAT`
     (`unsloth/gemma-4-26B-A4B-it-qat-GGUF`, MoE, 262144 ctx verified to
     load at q8_0 KV on the 5090) with `toolCalling` enabled to see whether
     this checkpoint holds up better — it's also a QAT quant, so watch for
-    the same symptom before trusting it in agent mode. If another model
+    the same symptom before trusting it in agent mode. The 31B later came
+    back as `Gemma-4-31B-IT-NVFP4` (stock instruct, unaffected), which has
+    since been replaced by `Gemma-4-31B-it-QAT-Abliterated`
+    (`huihui-ai/Huihui-gemma-4-31B-it-qat-q4_0-unquantized-abliterated-GGUF`,
+    Q4_K quant of the QAT q4_0-unquantized base, abliterated; configured
+    with `mmproj-model-bf16.gguf` vision tower, `mtp-ggml-model-bf16.gguf`
+    drafter + `spec-type = draft-mtp` `spec-draft-n-max 4`,
+    ctx-size 163840, cache-reuse 256, same custom chat template) — note it
+    straddles BOTH flagged categories (QAT quant + abliterated fine-tune),
+    so it is the highest-priority watch for the CPU-pegging symptom;
+    `toolCalling` is enabled. If another model
     hits it: disabling `toolCalling` for it in `chatLanguageModels.json`
     (VS Code has a per-model toggle) is the safe lever; do not patch
     `src/` directly.
