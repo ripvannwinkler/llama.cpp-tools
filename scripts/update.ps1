@@ -14,7 +14,13 @@ $server         = "$src\build\bin\llama-server.exe"
 $vcvars         = 'C:\Program Files\Microsoft Visual Studio\18\Community\VC\Auxiliary\Build\vcvars64.bat'
 if (-not (Test-Path $vcvars)) { Write-Host "vcvars64.bat not found at $vcvars" -ForegroundColor Red; return }
 
-function Get-Ver($exe) { if (Test-Path $exe) { (& $exe --version 2>&1 | Select-String 'version:' | Select-Object -First 1).ToString().Trim() } else { 'none' } }
+function Get-Ver($exe) {
+    if (-not (Test-Path $exe)) { return 'none' }
+    $ErrorActionPreference = 'Continue' # llama-server writes version information to stderr
+    $line = & $exe --version 2>&1 | Select-String 'version:' | Select-Object -First 1
+    if ($line) { return $line.ToString().Trim() }
+    return 'unknown'
+}
 
 # 1. refuse to switch branches with local source changes
 $changes = @(git -C $src status --porcelain)
@@ -48,7 +54,18 @@ if ($LASTEXITCODE -ne 0) {
 
 # 4. remember if the server was running, then stop it (binary is locked while running)
 $wasUp = [bool]((Get-NetTCPConnection -LocalPort 8080 -State Listen -ErrorAction SilentlyContinue).OwningProcess)
-if ($wasUp) { Write-Host "Stopping server (binary is locked while running)..." -ForegroundColor Cyan; & D:\llama.cpp\scripts\stop-llama.ps1 | Out-Null }
+if ($wasUp) {
+    Write-Host "Stopping server (binary is locked while running)..." -ForegroundColor Cyan
+    try {
+        & D:\llama.cpp\scripts\stop-llama.ps1 | Out-Null
+    } catch {
+        if (Get-Process llama-server -ErrorAction SilentlyContinue) {
+            Write-Host "Failed to stop all llama-server processes. Build not started." -ForegroundColor Red
+            return
+        }
+        Write-Host "Server exited during the stop sweep; continuing." -ForegroundColor DarkGray
+    }
+}
 
 $oldVer = Get-Ver $server
 
