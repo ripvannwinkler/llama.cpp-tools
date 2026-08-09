@@ -1,4 +1,4 @@
-# load.ps1 — switch the loaded model (starts the server first if needed).
+# load.ps1 - switch the loaded model (starts the server first if needed).
 #   .\scripts\load.ps1              # numbered menu of all models
 #   .\scripts\load.ps1 gemma        # fuzzy match: load the model whose id contains "gemma"
 #   .\scripts\load.ps1 -Name lite   # same, explicit param
@@ -7,14 +7,14 @@ param([string]$Name, [int]$Port = 8080)
 
 $base = "http://127.0.0.1:$Port"
 
-# 1. start the server if it isn't healthy (probe /health, not the TCP table —
+# 1. start the server if it isn't healthy (probe /health, not the TCP table -
 #    Get-NetTCPConnection can transiently report nothing right after a boot).
 #    Any /health response counts as "running": during a model load the status is
 #    "loading model", and we still want to reuse that server rather than restart.
 $healthy = $false
 try { Invoke-RestMethod "$base/health" -TimeoutSec 3 | Out-Null; $healthy = $true } catch { $healthy = $false }
 if (-not $healthy) {
-    Write-Host "Server not responding on $Port — starting it..." -ForegroundColor Yellow
+    Write-Host "Server not responding on $Port - starting it..." -ForegroundColor Yellow
     & D:\llama.cpp\scripts\start-llama.ps1 | Out-Null
 }
 
@@ -48,7 +48,7 @@ $already = $false
 try {
     Invoke-RestMethod "$base/models/load" -Method Post -TimeoutSec 300 -ContentType 'application/json' -Body (@{ model = $sel } | ConvertTo-Json) | Out-Null
 } catch {
-    $msg = if ($_.ErrorDetails.Message) { $_.ErrorDetails.Message } else { $_.Exception.Message }
+    if ($_.ErrorDetails.Message) { $msg = $_.ErrorDetails.Message } else { $msg = $_.Exception.Message }
     if ($msg -match 'already running') { $already = $true } else { Write-Host "Load failed: $msg" -ForegroundColor Red; return }
 }
 
@@ -56,13 +56,19 @@ try {
 $enc = [uri]::EscapeDataString($sel); $nctx = $null
 for ($i = 0; $i -lt 120; $i++) {
     try { $nctx = (Invoke-RestMethod "$base/props?model=$enc" -TimeoutSec 5).default_generation_settings.n_ctx; if ($nctx) { break } }
-    catch { if (($_.ErrorDetails.Message) -match 'failed to load') { Write-Host "Load failed (OOM at this model's ctx). See server.err.log." -ForegroundColor Red; return } }
+    catch {
+        $errorMessage = $_.ErrorDetails.Message
+        if ($errorMessage -match "failed to load") {
+            Write-Host "Load failed (OOM at this model context). See server.err.log." -ForegroundColor Red
+            return
+        }
+    }
     Start-Sleep -Milliseconds 500
 }
 if ($nctx) {
-    $verb = if ($already) { 'Already loaded' } else { 'Loaded' }
+    if ($already) { $verb = "Already loaded" } else { $verb = "Loaded" }
     Write-Host ("{0}: {1}  (n_ctx {2})" -f $verb, $sel, $nctx) -ForegroundColor Green
     Write-Host ("VRAM: " + (& nvidia-smi --query-gpu=memory.used --format=csv,noheader))
 } else {
-    Write-Host "Load requested but model not ready after 60s — check server.err.log." -ForegroundColor Yellow
+    Write-Host "Load requested but model not ready after 60s; check server.err.log." -ForegroundColor Yellow
 }
