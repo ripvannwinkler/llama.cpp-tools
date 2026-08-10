@@ -29,12 +29,14 @@ $root = 'D:\llama.cpp\models'
 $iniPath = 'D:\llama.cpp\models.ini'
 if (-not (Test-Path $bench)) { Write-Host "llama-bench not found at $bench" -ForegroundColor Red; return }
 
-# ---- enumerate models: <root>\<id>\*.gguf (skip mmproj, prefer first shard) + top-level *.gguf ----
+# ---- enumerate models: <root>\<id>\*.gguf (skip mmproj, prefer first shard, else largest file
+# so speculative-decoding drafter sidecars like mtp-*.gguf/dflash-*.gguf don't get picked over
+# the actual target model) + top-level *.gguf ----
 $entries = @()
 Get-ChildItem $root -Directory | ForEach-Object {
     $gg = Get-ChildItem $_.FullName -Filter *.gguf | Where-Object { $_.Name -notmatch 'mmproj' }
     $main = $gg | Where-Object { $_.Name -match '-00001-of-' } | Select-Object -First 1
-    if (-not $main) { $main = $gg | Select-Object -First 1 }
+    if (-not $main) { $main = $gg | Sort-Object Length -Descending | Select-Object -First 1 }
     if ($main) { $entries += [pscustomobject]@{ id = $_.Name; path = $main.FullName } }
 }
 Get-ChildItem $root -Filter *.gguf -File -ErrorAction SilentlyContinue |

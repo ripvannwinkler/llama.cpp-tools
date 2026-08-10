@@ -178,3 +178,33 @@ changes the max `ctx-size` that fits in VRAM.
   fallback only for when `/metrics` is unavailable. If a model preset
   outside `models.ini` (e.g. a per-model override) doesn't inherit `[*]`,
   auto-unload silently falls back to the old lossy detection for it.
+- **`Muse-Glimmer-30B-UD-Q6_K_XL`** (Meta's agentic multimodal 30B, dense —
+  not MoE; Gemma3-family sliding-window attention with `final_logit_softcapping`
+  / `logit_scale`, embedded "Onyx ATEM" tool-calling chat template) — the
+  architecture (`muse-glimmer`) wasn't in the vendored source when the model
+  was downloaded; needed `scripts\update.ps1` to pull
+  `ggml-org/llama.cpp#26841` before it would load at all (build 223 -> 247).
+  Vision (`mmproj-Muse-Glimmer-30B-Q8_0.gguf`) was deliberately **not** wired
+  in — VRAM is already tight without it (weights 26.3GB + DFlash drafter
+  1.6GB = ~28GB resident, and the full 131072 native ctx at q8_0 KV lands at
+  31.4GB/32.6GB used, ~1.2GB headroom). `ubatch-size`: bench-verified 1024
+  over 512 (+5.9% pp, 3813->4038 t/s); 2048 added only +0.2% more, not worth
+  it. Speculative decoding uses the model's own DFlash drafter
+  (`dflash-kquant.gguf`, `spec-type = draft-dflash`, `spec-draft-n-max 4`,
+  `spec-draft-p-min 0.6`) — confirmed active (`/slots` shows
+  `speculative: true`) with ~80-90% draft acceptance, taking decode from the
+  no-spec bench baseline of 57 t/s to ~67-73 t/s in real requests. The
+  embedded chat template renders/parses cleanly as-is (no
+  `chat-template-file` override needed) but the model always emits a
+  substantial `reasoning_content` trace before the real answer regardless of
+  prompt brevity — budget accordingly (a 128-token cap produced
+  `finish_reason: "length"` with empty `content`; 512 was enough).
+  `reasoning-preserve = on` set to match the Qwen3.6 presets' convention for
+  heavy-reasoning models; verified it doesn't break multi-turn. `cache-reuse`
+  confirmed working (a 2-turn follow-up reused 62 of 67 prior tokens) despite
+  the upstream PR noting "state save/load disabled" for this arch — that
+  caveat is about the separate `/slots` save-to-disk feature, not in-session
+  cache-reuse. Tool-calling (`tools` + `tool_choice: auto`) smoke-tested
+  clean and fast (no CPU-pegging symptom) but the ATEM format is new/lightly
+  tested here — still a watch-item per the CPU-pegging note above, since this
+  is explicitly an agentic, tool-heavy model.
