@@ -1,6 +1,12 @@
 # bench.ps1 — benchmark a local model with llama-bench.
-# Lists models, lets you pick one (or pass -Model <id>), applies that model's KV-quant
-# from models.ini, frees VRAM first, then runs llama-bench (prompt-processing + gen speed).
+# Lists models, lets you pick one (or pass -Model <id>), applies that model's
+# llama-bench-relevant settings from models.ini (cache-type-k/v, batch-size,
+# ubatch-size, threads, n-cpu-moe, load-mode, and flash-attn/n-gpu-layers when
+# ini gives a concrete value) — server-only settings with no llama-bench
+# equivalent (ctx-size, fit, cache-reuse, spec-*, jinja, chat-template-file,
+# ...) are intentionally not read. Frees VRAM first, then runs llama-bench
+# (prompt-processing + gen speed). Explicit -FlashAttn / -NGL on the command
+# line still win over models.ini.
 #
 # Examples:
 #   .\scripts\bench.ps1                                  # interactive menu, default 1024 prompt / 256 gen
@@ -12,8 +18,8 @@ param(
     [int]$GenTokens = 256,       # -n  : tokens to generate for token-gen (tg) test
     [int]$Depth = 0,         # -d  : prefill depth before the test (tests speed at context depth)
     [int]$Reps = 3,         # -r  : repetitions per test
-    [int]$NGL = 99,        # -ngl: layers offloaded to GPU
-    [ValidateSet('on', 'off', 'auto')][string]$FlashAttn = 'on',
+    [int]$NGL = 99,        # -ngl: layers offloaded to GPU (models.ini n-gpu-layers used instead when numeric, unless passed explicitly)
+    [ValidateSet('on', 'off', 'auto')][string]$FlashAttn = 'on',  # models.ini flash-attn used instead unless passed explicitly
     [switch]$NoUnload               # skip freeing VRAM from the running server first
 )
 
@@ -50,8 +56,10 @@ else {
     $sel = $entries[[int]$choice]
 }
 
-# ---- pull this model's cache-type-k/v from models.ini ([model] overrides [*]) ----
-$ctk = $null; $ctv = $null
+# ---- pull this model's llama-bench-relevant settings from models.ini ([model] overrides [*]) ----
+$benchKeys = @('cache-type-k', 'cache-type-v', 'batch-size', 'ubatch-size',
+    'threads', 'n-cpu-moe', 'load-mode', 'flash-attn', 'n-gpu-layers')
+$cfg = @{}
 if (Test-Path $iniPath) {
     $section = $null; $ini = @{}
     foreach ($line in Get-Content $iniPath) {
@@ -63,11 +71,16 @@ if (Test-Path $iniPath) {
     foreach ($s in @('*', $sel.id)) {
         # '*' first, model second so model wins
         if ($ini[$s]) {
-            if ($ini[$s]['cache-type-k']) { $ctk = $ini[$s]['cache-type-k'] }
-            if ($ini[$s]['cache-type-v']) { $ctv = $ini[$s]['cache-type-v'] }
+            foreach ($k in $benchKeys) { if ($ini[$s][$k]) { $cfg[$k] = $ini[$s][$k] } }
         }
     }
 }
+
+# ini supplies the default for these two; an explicit -FlashAttn / -NGL on the
+# command line still wins. n-gpu-layers is skipped when ini says "auto"
+# (llama-bench needs a concrete int; only the router does device-fit).
+if (-not $PSBoundParameters.ContainsKey('FlashAttn') -and $cfg['flash-attn'] -in @('on', 'off', 'auto')) { $FlashAttn = $cfg['flash-attn'] }
+if (-not $PSBoundParameters.ContainsKey('NGL') -and $cfg['n-gpu-layers'] -match '^\d+$') { $NGL = [int]$cfg['n-gpu-layers'] }
 
 # ---- free VRAM: unload models from the running server so llama-bench won't OOM ----
 if (-not $NoUnload) {
@@ -89,8 +102,13 @@ if (-not $NoUnload) {
 # ---- build args + run ----
 $args = @('-m', $sel.path, '-ngl', $NGL, '-fa', $FlashAttn, '-p', $PromptTokens, '-n', $GenTokens, '-r', $Reps)
 if ($Depth -gt 0) { $args += @('-d', $Depth) }
-if ($ctk) { $args += @('-ctk', $ctk) }
-if ($ctv) { $args += @('-ctv', $ctv) }
+if ($cfg['cache-type-k']) { $args += @('-ctk', $cfg['cache-type-k']) }
+if ($cfg['cache-type-v']) { $args += @('-ctv', $cfg['cache-type-v']) }
+if ($cfg['batch-size']) { $args += @('-b', $cfg['batch-size']) }
+if ($cfg['ubatch-size']) { $args += @('-ub', $cfg['ubatch-size']) }
+if ($cfg['threads']) { $args += @('-t', $cfg['threads']) }
+if ($cfg['n-cpu-moe']) { $args += @('-ncmoe', $cfg['n-cpu-moe']) }
+if ($cfg['load-mode']) { $args += @('-lm', $cfg['load-mode']) }
 
 Write-Host "`nBenchmarking: $($sel.id)" -ForegroundColor Green
 Write-Host "  file : $($sel.path)"
