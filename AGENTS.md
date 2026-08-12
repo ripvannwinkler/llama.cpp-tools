@@ -45,22 +45,20 @@ list itself) changes in `models.ini`, update these too:
   Code chat model list. Each entry's `maxInputTokens` should equal
   `ctx-size - maxOutputTokens` (output is `8192` by default) to match the
   corresponding `models.ini` section.
-
-**Pi no longer needs manual mirroring.** Both pi configs
-(`E:\01-personal\pi.dev\models.json` and `C:\Users\Chris\.pi\agent\models.json`)
-are now empty (`providers: {}`) — pi's built-in llama.cpp router provider
-(built into pi, registered at startup) auto-discovers models from the router at
-`LLAMA_BASE_URL` (default `http://127.0.0.1:8080`; the pi.dev compose.yml sets
-`host.docker.internal:8080`). It reads each model's id, input modalities, and
-ctx-size from the router's catalog (`/models`, `meta.n_ctx` = the preset's
-ctx-size), so `models.ini` ctx edits propagate with zero config changes.
-Flow: `/llama` (load/unload/download) → `/model` (select). Note it only lists
-**loaded** models in `/model`, and it does **not** enable thinking
-(`reasoning: false`, `maxTokens = contextWindow`) — the old configs had
-`reasoning: true` + `qwen-chat-template` thinking on all models; restore that
-per model via `modelOverrides` in the pi `models.json` if needed:
-`providers.llama.cpp.modelOverrides["<model-id>"] = { "reasoning": true,
-"compat": { "thinkingFormat": "qwen-chat-template" } }`.
+- `C:\Users\Chris\.config\opencode\opencode.json` — opencode's `llama-local`
+  provider. Each entry under `provider.llama-local.models` keys by the same
+  `models.ini` section name; `limit.context` = that section's `ctx-size`.
+  `limit.output` is a deliberate per-tool choice, not derived (currently
+  `8192` everywhere) — leave it alone unless asked.
+- `C:\Users\Chris\.pi\agent\models.json` — pi's `llama-local` provider.
+  Each entry under `providers.llama-local.models[]` keys by `id` (the
+  `models.ini` section name); `contextWindow` = that section's `ctx-size`.
+  `maxTokens` is likewise a deliberate choice (`8192` everywhere), not
+  derived. `input` (vision) and `reasoning`/`compat.thinkingFormat` are
+  **not** auto-derived by the sync skill — set by hand per model, mirroring
+  whatever `chatLanguageModels.json`'s `vision` flag already says for that
+  model, and `reasoning: true` + `qwen-chat-template` only for `models.ini`
+  presets with `reasoning = on`.
 
 Entries key by the same model id used in `models.ini` (the
 `[section]` name). Adding, removing, or renaming a model in `models.ini` should
