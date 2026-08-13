@@ -80,6 +80,26 @@ changes the max `ctx-size` that fits in VRAM.
   Bench-verified values: `2048` for the MoE presets (+8.6% prompt
   processing vs 1024 on the 35B NVFP4), `1024` for the dense 27B (2048
   gained only 1.3% there).
+- **Sampling params** — every preset now states its full sampler set explicitly
+  rather than inheriting llama.cpp's defaults (`src/common/common.h`: `temp 0.8`,
+  `top_k 40`, `top_p 0.95`, `min_p 0.05`), which match no model card used here.
+  Convention: Qwen3.6 / Ornith (Qwen3.5-MoE-based) get `temp 0.6` / `top-k 20` /
+  `top-p 0.95` / `min-p 0.0` — Qwen's published thinking-mode values. Gemma-4
+  gets `top-k 64` and `temp 0.7` (the card says `1.0`; `0.7` is a deliberate
+  middle ground for agentic coding). Muse-Glimmer is the least grounded — `0.6` /
+  `40` / `0.95` / `0.0`, explicit-and-conservative rather than card-derived.
+  **Do not pin a `reasoning = on` preset near-greedy** (the Qwen3.6 presets and
+  the Gemma QAT-abliterated one were previously at `temp = 0.1`): Qwen explicitly
+  warns that near-greedy thinking-mode decoding causes endless repetition, and
+  it's a plausible contributor to the CPU-pegging symptom below, since a model
+  locked into a non-terminating pattern never emits the tool-call trigger the
+  lazy grammar waits for. `[*]` carries `temp 0.6` / `min-p 0.0` so a newly added
+  preset can't silently land on `0.8` / `0.05`.
+  Client override: `opencode.json` sets per-agent `temperature` (currently `0.6`
+  for both `plan` and `build`), which **overrides** the preset for opencode
+  sessions; VS Code chat and pi send no temperature, so the preset governs there.
+  These sampler values are not part of the `ctx-size` mirroring contract above —
+  the external configs don't carry them.
 - Speculative decoding: the 27B's gguf ships MTP layers built-in
   (`spec-type = draft-mtp`, 71 -> 146 t/s greedy coding). The 35B NVFP4
   and Ornith exit on load if `spec-type` is set (MTP was stripped in those
