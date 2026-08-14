@@ -144,7 +144,7 @@ changes the max `ctx-size` that fits in VRAM.
   - This was hit by `Gemma-4-31B-it-QAT` (a QAT quant) and
     `Qwen3.6-27B-Fable-Fusion-711-Uncensored-Heretic-MTP` (an abliterated
     fine-tune; **no longer present** — replaced by the stock
-    `Qwen3.8-27B` release, which smoke-tests clean on tool calling) —
+    `Qwen3.8-27B-NVFP4` release, which smoke-tests clean on tool calling) —
     both categories of model tend to reproduce trigger tokens
     less reliably than a stock instruct release (e.g.
     `Qwen3.6-35B-A3B-NVFP4`, unaffected). The original unsloth 31B QAT was
@@ -168,10 +168,10 @@ changes the max `ctx-size` that fits in VRAM.
     hits it: disabling `toolCalling` for it in `chatLanguageModels.json`
     (VS Code has a per-model toggle) is the safe lever; do not patch
     `src/` directly.
-- **`Qwen3.8-27B`** (`unsloth/Qwen3.8-27B-GGUF`, `Qwen3.8-27B-UD-Q5_K_XL.gguf`,
-  18.8GiB) — replaced `Qwen3.6-27B-Fable-Fusion-711` in the dense 27B slot.
+- **`Qwen3.8-27B-NVFP4`** (`unsloth/Qwen3.8-27B-NVFP4`,
+  `Qwen3.8-27B-NVFP4.gguf`, 21.6GiB) — the dense 27B Qwen3.8 slot.
   Stock Qwen instruct release, *not* an abliterated fine-tune, which is the
-  main reason for the swap (see the CPU-pegging note above). Arch is `qwen35`
+  main reason for the selection (see the CPU-pegging note above). Arch is `qwen35`
   (`Qwen3_5ForConditionalGeneration` upstream), a hybrid-attention design —
   64 text layers, 48 linear-attention + 16 full in a repeating 3+1 pattern —
   already supported by the vendored `src/`, no `update.ps1` needed.
@@ -180,22 +180,13 @@ changes the max `ctx-size` that fits in VRAM.
     `qwen35.block_count = 65` (64 text layers + 1 MTP layer),
     `qwen35.nextn_predict_layers = 1`, and four `blk.64.nextn.*` tensors
     (`eh_proj`, `enorm`, `hnorm`, `shared_head_norm`). So `spec-type =
-    draft-mtp` + `spec-draft-n-max 2` + `spec-draft-p-min 0.6` works with no
-    `spec-draft-model` — `/slots?model=Qwen3.8-27B` reports `speculative:
-    true`, draft acceptance **88.3%** (634/718), ~108-120 tok/s decode.
-    Note `/slots` now 400s without a `?model=` query param.
-  - **Vision deliberately NOT wired in**, same call as Muse-Glimmer. The
-    `mmproj-BF16.gguf` (931MB) *is* downloaded and vision was verified working
-    (correctly described `src/media/llama1-logo.png`), but at 262144 ctx it
-    left too little headroom: 31129MiB resident at load, and a *large* image
-    (`media/matmul.png`) pushed the GPU to 32064/32607MiB — 543MiB spare, an
-    OOM waiting for a bigger or multi-image request. Dropping `mmproj` buys
-    that back. Re-add it only alongside a ctx reduction (196608 loaded at
-    29166MiB with vision, if that trade is ever wanted). The gguf is kept on
-    disk so this is a one-line change.
-  - `ctx-size = 262144` — full native context, 31598MiB at load, peak
-    31835/32607MiB during a 46827-token prompt (5.2s, 88.9 tok/s decode).
-    Text-only, so there is no image-sized allocation spike to absorb.
+     draft-mtp` + `spec-draft-n-max 2` + `spec-draft-p-min 0.6` works with no
+     `spec-draft-model` — `/slots?model=Qwen3.8-27B-NVFP4` reports `speculative:
+     true`, draft acceptance **88.3%** (634/718), ~108-120 tok/s decode.
+     Note `/slots` now 400s without a `?model=` query param.
+   - Vision is wired in through `mmproj-Qwen3.8-27B-NVFP4.gguf` and the
+     converted model loads successfully as NVFP4 with text and image support.
+     The configured `ctx-size = 200000` leaves headroom for the projector.
   - `temp = 1.0` is a **deliberate exception** to the repo's `0.6` Qwen
     convention — it is the value Qwen publishes for this model's thinking
     mode. Do not "fix" it to 0.6 for consistency.
@@ -203,7 +194,7 @@ changes the max `ctx-size` that fits in VRAM.
     correctly as-is (`reasoning_content` populates separately from `content`).
     Tool calling (`tools` + `tool_choice: auto`) returns a correct call in
     ~1s with no sign of the CPU-pegging symptom; `toolCalling` enabled.
-- **Reasoning effort (`Qwen3.8-27B` only, and the trap that comes with it)** —
+- **Reasoning effort (`Qwen3.8-27B-NVFP4` only, and the trap that comes with it)** —
   this is the first preset here to use `chat-template-kwargs`. The model's
   template accepts `reasoning_effort` in **`low` / `medium` / `xhigh`**,
   defaulting to `xhigh`, plus `enable_thinking` and `preserve_thinking`
