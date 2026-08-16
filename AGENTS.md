@@ -214,9 +214,10 @@ changes the max `ctx-size` that fits in VRAM.
     invert — don't use an easy question to test this.) Confirming the silent
     drop: a top-level `reasoning_effort: "low"` produced a trace byte-identical
     to explicit `medium`, i.e. it fell through to the preset default.
-  - Preset defaults to `medium` with `reasoning-budget = 8192` (raised from the
-    4096 the other presets use, precisely because this model's traces run
-    long). A low budget plus `xhigh` is the combination to avoid — `xhigh` is
+  - Preset explicitly sets `xhigh` (matching the template's own default) with
+    `reasoning-budget = 8192` (raised from the 4096 the other presets use,
+    precisely because this model's traces run long). A low budget plus
+    `xhigh` is the combination to watch for — `xhigh` is
     explicitly the "extensive reasoning, validate assumptions" mode and will
     hit the budget and trigger `--reasoning-budget-message` injection on
     harder prompts.
