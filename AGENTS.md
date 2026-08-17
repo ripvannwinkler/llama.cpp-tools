@@ -184,9 +184,10 @@ changes the max `ctx-size` that fits in VRAM.
      `spec-draft-model` — `/slots?model=Qwen3.8-27B-NVFP4` reports `speculative:
      true`, draft acceptance **88.3%** (634/718), ~108-120 tok/s decode.
      Note `/slots` now 400s without a `?model=` query param.
-   - Vision is wired in through `mmproj-Qwen3.8-27B-NVFP4.gguf` and the
-     converted model loads successfully as NVFP4 with text and image support.
-     The configured `ctx-size = 200000` leaves headroom for the projector.
+   - **Stale doc note corrected**: no `mmproj` key is actually present in this
+     preset in `models.ini` — this is text-only. (An earlier version of this
+     note claimed vision was wired in via `mmproj-Qwen3.8-27B-NVFP4.gguf`;
+     that file/key does not exist in the current config.)
   - `temp = 1.0` is a **deliberate exception** to the repo's `0.6` Qwen
     convention — it is the value Qwen publishes for this model's thinking
     mode. Do not "fix" it to 0.6 for consistency.
@@ -194,6 +195,25 @@ changes the max `ctx-size` that fits in VRAM.
     correctly as-is (`reasoning_content` populates separately from `content`).
     Tool calling (`tools` + `tool_choice: auto`) returns a correct call in
     ~1s with no sign of the CPU-pegging symptom; `toolCalling` enabled.
+  - **Max context + speculative re-tune (2026-08-16)**: native `n_ctx_train`
+    is actually **262144**, not the 200000 previously configured. Pushed
+    `ctx-size` to the full 262144: at the repo's usual `cache-type-k q8_0` /
+    `v q4_0` it fit but left only ~0.8GiB headroom (31.8/32.6GiB) — too thin
+    for comfort. Dropping `cache-type-k` to `q4_0` as well (both K/V now
+    `q4_0`) freed it up to ~2.3GiB headroom (30.3-30.6GiB used) for the same
+    full context — this hybrid-attention arch (48 linear-attention + 16 full
+    layers) apparently has a small enough full-attention KV footprint that
+    quantizing K further barely costs anything relative to the safety margin
+    gained. Also re-swept `spec-draft-n-max`/`spec-draft-p-min` against a
+    real request at the new ctx-size (previous **88.3%** acceptance figure
+    above was measured at the old `ctx-size 200000`/`n-max 2`/`p-min 0.6`,
+    not reproduced here): `n-max 2/p-min 0.6` → 72.8% accept, 61.7 tok/s;
+    `n-max 2/p-min 0.75` → 86.9% accept, 62.0 tok/s; `n-max 4/p-min 0.6` →
+    57.2% accept, 60.0 tok/s; `n-max 4/p-min 0.75` → 76.7% accept, **64.0
+    tok/s (fastest)**. Settled on `n-max 4`/`p-min 0.75` for raw decode
+    speed despite the lower acceptance % — accepted-tokens-per-second is what
+    matters, not the ratio. Single-prompt measurements, not averaged over
+    multiple runs — revisit if real-world throughput doesn't match.
 - **Reasoning effort (`Qwen3.8-27B-NVFP4` only, and the trap that comes with it)** —
   this is the first preset here to use `chat-template-kwargs`. The model's
   template accepts `reasoning_effort` in **`low` / `medium` / `xhigh`**,
