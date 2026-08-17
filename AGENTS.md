@@ -253,6 +253,59 @@ changes the max `ctx-size` that fits in VRAM.
   fallback only for when `/metrics` is unavailable. If a model preset
   outside `models.ini` (e.g. a per-model override) doesn't inherit `[*]`,
   auto-unload silently falls back to the old lossy detection for it.
+- **`Muse-Glimmer-30B-UD-Q4_K_XL`** (`unsloth/Muse-Glimmer-30B-GGUF`,
+  `Muse-Glimmer-30B-UD-Q4_K_XL.gguf`, 14.79GiB) — replaced the abliterated
+  `Muse-Glimmer-30B-Abliterated-Q5_K_M` slot with unsloth's stock (non-
+  abliterated) release, this time with vision wired in. Unlike the
+  Q6_K_XL note below, the much smaller Q4_K_XL weights left enough VRAM
+  headroom to add `mmproj-Muse-Glimmer-30B-Q8_0.gguf` (1.91GiB) alongside the
+  same-family `dflash-kquant.gguf` drafter (1.52GiB) and still hit the full
+  `n_ctx_train` of 131072: real load (`load.ps1`, not just `probe-ctx.ps1`,
+  which doesn't account for `mmproj`/drafter overhead) used 26.1GiB at
+  `cache-type-v q4_0`, bumped to `cache-type-k/v q8_0`/`q8_0` for better KV
+  quality at only +191MiB more (26.3GiB total, ~6.1GiB headroom on the 5090's
+  32607MiB) — that small a delta from doubling V-cache precision suggests
+  this arch's V-cache is a small fraction of total KV memory here.
+  `spec-draft-n-max 4` / `spec-draft-p-min 0.6` (carried over from the
+  Q6_K_XL note's bench-verified values for this same `dflash-kquant.gguf`
+  file) confirmed ~85% draft acceptance (93/110) in a real request, matching
+  the ~80-90% range seen there. The embedded chat template rendered/parsed
+  cleanly with no `chat-template-file` override needed (unlike the old
+  abliterated entry, which required a custom `muse_glimmer_chat_template.jinja`)
+  — `reasoning_content`/`content` split correctly in a real request. A real
+  vision request (base64 image + text) round-tripped without error
+  (`load_model: loaded multimodal model` in the log), confirming the
+  perception encoder loads and processes images end-to-end. Adding `mmproj`
+  has a cost: `cache_reuse is not supported by multimodal, it will be
+  disabled` — logged at load despite `cache-reuse = 256` still being set in
+  the preset, so prompt-prefix reuse no longer applies to this model. A
+  `special_eot_id is not in special_eog_ids` warning appears at load; harmless
+  in the smoke tests run so far (`finish_reason: "stop"` in both the text and
+  vision requests) but worth watching if generation ever fails to terminate.
+  Old model folder (`Muse-Glimmer-30B-Abliterated-Q5_K_M/`, gguf + F16 dflash
+  drafter + an mmproj that was downloaded but never wired into `models.ini`)
+  deleted after the new preset was confirmed working.
+  - **YaRN past training context does not work through `llama-server`** —
+    tried `ctx-size 262144` + `rope-scaling yarn` + `rope-scale 2` +
+    `yarn-orig-ctx 131072` to push past the 131072 native ceiling. The
+    underlying `llama_context` *does* apply the scaling (KV cache grows to
+    match, log shows `n_ctx_seq (262144) > n_ctx_train (131072)`), but
+    `tools/server/server-context.cpp` unconditionally caps the usable slot
+    context at `n_ctx_train` regardless (`"the slot context (262144) exceeds
+    the training context of the model (131072) - capping"`,
+    `server-context.cpp:1200-1204`) — there is no flag to override this. Net
+    effect was strictly worse: +1.5GiB VRAM for a KV cache that's never
+    actually used past 131072. Reverted. Don't retry this without patching
+    upstream `src/` (which `scripts/update.ps1` would overwrite anyway).
+    Separately, `fit = on` interacts badly with `spec-draft-model` at an
+    out-of-training ctx-size — its memory-fitting pass tries to measure the
+    draft model at the oversized ctx and fails (`dflash requires ctx_other to
+    be set`, `[spec] failed to measure draft model memory`), silently falling
+    back to a smaller ctx rather than erroring loudly.
+- **`fit` / `fit-target` removed from every preset** (was on the two Qwen3
+  presets, Gemma, and briefly Muse-Glimmer) at Chris's request. All four
+  affected presets were reloaded afterward and confirmed to still load
+  cleanly at their explicit `ctx-size` with no regression.
 - **`Muse-Glimmer-30B-UD-Q6_K_XL`** (Meta's agentic multimodal 30B, dense —
   not MoE; Gemma3-family sliding-window attention with `final_logit_softcapping`
   / `logit_scale`, embedded "Onyx ATEM" tool-calling chat template) — the
