@@ -76,7 +76,7 @@ $buildCmd = "cd /d `"$src`" && " +
             "cmake -B build -G Ninja -DGGML_CUDA=ON -DCMAKE_BUILD_TYPE=Release -DCMAKE_CUDA_ARCHITECTURES=120 " +
             "-DGGML_CUDA_GRAPHS=ON -DGGML_CUDA_FA_ALL_QUANTS=ON && " +
             "cmake --build build --config Release -j"
-cmd /c "`"$vcvars`" >nul 2>&1 && $buildCmd"
+& "$env:SystemRoot\System32\cmd.exe" /c "`"$vcvars`" >nul 2>&1 && $buildCmd"
 $sw.Stop()
 if ($LASTEXITCODE -ne 0) { Write-Host "BUILD FAILED (exit $LASTEXITCODE). Server left stopped." -ForegroundColor Red; return }
 
