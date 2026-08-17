@@ -168,8 +168,10 @@ changes the max `ctx-size` that fits in VRAM.
     hits it: disabling `toolCalling` for it in `chatLanguageModels.json`
     (VS Code has a per-model toggle) is the safe lever; do not patch
     `src/` directly.
-- **`Qwen3.8-27B-NVFP4`** (`unsloth/Qwen3.8-27B-NVFP4`,
-  `Qwen3.8-27B-NVFP4.gguf`, 21.6GiB) — the dense 27B Qwen3.8 slot.
+- **`Qwen3.8-27B-UD-Q4_K_XL`** (originally `unsloth/Qwen3.8-27B-NVFP4`,
+  `Qwen3.8-27B-NVFP4.gguf`, 21.6GiB; switched 2026-08-16 to
+  `unsloth/Qwen3.8-27B-GGUF`'s `Qwen3.8-27B-UD-Q4_K_XL.gguf`, 16.68GiB — see
+  the re-tune note below) — the dense 27B Qwen3.8 slot.
   Stock Qwen instruct release, *not* an abliterated fine-tune, which is the
   main reason for the selection (see the CPU-pegging note above). Arch is `qwen35`
   (`Qwen3_5ForConditionalGeneration` upstream), a hybrid-attention design —
@@ -184,10 +186,11 @@ changes the max `ctx-size` that fits in VRAM.
      `spec-draft-model` — `/slots?model=Qwen3.8-27B-NVFP4` reports `speculative:
      true`, draft acceptance **88.3%** (634/718), ~108-120 tok/s decode.
      Note `/slots` now 400s without a `?model=` query param.
-   - **Stale doc note corrected**: no `mmproj` key is actually present in this
-     preset in `models.ini` — this is text-only. (An earlier version of this
-     note claimed vision was wired in via `mmproj-Qwen3.8-27B-NVFP4.gguf`;
-     that file/key does not exist in the current config.)
+   - **Stale doc note corrected (now moot post-switch)**: at the time this was
+     written no `mmproj` key was present in this preset in `models.ini` — it
+     was text-only. (An earlier version of this note claimed vision was wired
+     in via `mmproj-Qwen3.8-27B-NVFP4.gguf`, which never existed in the
+     config.) Vision was added for real after the quant switch below.
   - `temp = 1.0` is a **deliberate exception** to the repo's `0.6` Qwen
     convention — it is the value Qwen publishes for this model's thinking
     mode. Do not "fix" it to 0.6 for consistency.
@@ -195,26 +198,44 @@ changes the max `ctx-size` that fits in VRAM.
     correctly as-is (`reasoning_content` populates separately from `content`).
     Tool calling (`tools` + `tool_choice: auto`) returns a correct call in
     ~1s with no sign of the CPU-pegging symptom; `toolCalling` enabled.
-  - **Max context + speculative re-tune (2026-08-16)**: native `n_ctx_train`
-    is actually **262144**, not the 200000 previously configured. Pushed
-    `ctx-size` to the full 262144: at the repo's usual `cache-type-k q8_0` /
-    `v q4_0` it fit but left only ~0.8GiB headroom (31.8/32.6GiB) — too thin
-    for comfort. Dropping `cache-type-k` to `q4_0` as well (both K/V now
-    `q4_0`) freed it up to ~2.3GiB headroom (30.3-30.6GiB used) for the same
-    full context — this hybrid-attention arch (48 linear-attention + 16 full
-    layers) apparently has a small enough full-attention KV footprint that
-    quantizing K further barely costs anything relative to the safety margin
-    gained. Also re-swept `spec-draft-n-max`/`spec-draft-p-min` against a
-    real request at the new ctx-size (previous **88.3%** acceptance figure
-    above was measured at the old `ctx-size 200000`/`n-max 2`/`p-min 0.6`,
-    not reproduced here): `n-max 2/p-min 0.6` → 72.8% accept, 61.7 tok/s;
-    `n-max 2/p-min 0.75` → 86.9% accept, 62.0 tok/s; `n-max 4/p-min 0.6` →
-    57.2% accept, 60.0 tok/s; `n-max 4/p-min 0.75` → 76.7% accept, **64.0
-    tok/s (fastest)**. Settled on `n-max 4`/`p-min 0.75` for raw decode
-    speed despite the lower acceptance % — accepted-tokens-per-second is what
-    matters, not the ratio. Single-prompt measurements, not averaged over
-    multiple runs — revisit if real-world throughput doesn't match.
-- **Reasoning effort (`Qwen3.8-27B-NVFP4` only, and the trap that comes with it)** —
+  - **Max context re-tune, then quant switch (2026-08-16)**: native
+    `n_ctx_train` is actually **262144**, not the 200000 previously
+    configured. First pushed `ctx-size` to 262144 on the NVFP4 quant: at the
+    repo's usual `cache-type-k q8_0`/`v q4_0` it fit but left only ~0.8GiB
+    headroom (31.8/32.6GiB); dropping K to `q4_0` too freed ~2.3GiB headroom
+    for the same context. Then re-swept `spec-draft-n-max`/`p-min` on NVFP4
+    at 262144 (previous **88.3%** figure above was measured at the old
+    `ctx-size 200000`/`n-max 2`/`p-min 0.6`, not reproduced at full ctx):
+    `n-max 2/p-min 0.6` → 72.8% accept, 61.7 tok/s; `2/0.75` → 86.9%, 62.0
+    tok/s; `4/0.6` → 57.2%, 60.0 tok/s; `4/0.75` → 76.7%, **64.0 tok/s**
+    (best NVFP4 result).
+  - **Then switched quant entirely to `Qwen3.8-27B-UD-Q4_K_XL`**, after a
+    real `llama-bench` head-to-head against the NVFP4 file (`-ngl 999 -fa 1
+    -ctk q4_0 -ctv q4_0`, 3 runs): NVFP4 pp512 **4373.6 t/s** / tg128 54.6
+    t/s vs Q4_K_XL pp512 3584.5 t/s / tg128 **60.1 t/s**. Root cause of the
+    split: reading the NVFP4 gguf's own tensor metadata shows only 168 of
+    1202 tensors are actually `nvfp4` — 233 are `q8_0` and 105 are `bf16` —
+    so the file is a mixed-precision quant where Blackwell's native FP4
+    tensor cores (`BLACKWELL_MMA_AVAILABLE` in
+    `ggml-cuda/common.cuh`/`vecdotq.cuh`) only accelerate a fraction of the
+    model (likely the FFN matmuls, which explains the pp win); tg is
+    bandwidth-bound, where Q4_K_XL's ~5GiB-smaller footprint wins instead.
+    Confirmed `Qwen3.8-27B-UD-Q4_K_XL.gguf` retains the same MTP `nextn`
+    tensors (`blk.64.nextn.*`) before switching, so speculative decoding
+    parity was verified, not assumed. At `ctx-size 262144`,
+    `cache-type-k q8_0`/`v q4_0` (back to the repo's standard KV precision —
+    the smaller weights left *more* headroom than NVFP4 even at its lower-
+    precision `q4_0`/`q4_0`: ~3.14GiB vs ~2.3GiB), a real request measured
+    **69.98 tok/s** decode at 83.4% draft acceptance (201/241) —
+    better than every NVFP4 configuration tested. Also picked up
+    `mmproj-BF16.gguf` (887MiB) from the same repo for vision, which the
+    NVFP4 quant never had; with vision loaded, headroom drops to ~2.03GiB
+    (30.53/32.6GiB) — still comfortable. A real vision request correctly
+    described a test image (red-to-black gradient) end-to-end. Old NVFP4
+    model folder deleted after the new config was confirmed working.
+    `spec-draft-n-max 4`/`p-min 0.75` carried over unchanged from the NVFP4
+    tuning above — already strong on the new quant, not re-swept.
+- **Reasoning effort (`Qwen3.8-27B-UD-Q4_K_XL` only, and the trap that comes with it)** —
   this is the first preset here to use `chat-template-kwargs`. The model's
   template accepts `reasoning_effort` in **`low` / `medium` / `xhigh`**,
   defaulting to `xhigh`, plus `enable_thinking` and `preserve_thinking`
