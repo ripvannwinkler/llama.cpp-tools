@@ -1,0 +1,39 @@
+{
+  "base_url": "http://localhost:8080/v1",
+  "suite": "all",
+  "runs": 1,
+  "models": [
+    {
+      "model": "Gemma-4-31B-it-QAT-Abliterated",
+      "passed": 27,
+      "total": 27,
+      "score_pct": 100.0,
+      "json": "results__Gemma-4-31B-it-QAT-Abliterated.json",
+      "csv": "results__Gemma-4-31B-it-QAT-Abliterated.csv"
+    },
+    {
+      "model": "Muse-Glimmer-30B-UD-Q4_K_XL",
+      "passed": 26,
+      "total": 27,
+      "score_pct": 96.29629629629629,
+      "json": "results__Muse-Glimmer-30B-UD-Q4_K_XL.json",
+      "csv": "results__Muse-Glimmer-30B-UD-Q4_K_XL.csv"
+    },
+    {
+      "model": "Qwen3.6-35B-A3B-MXFP4_MOE-BF16",
+      "passed": 25,
+      "total": 27,
+      "score_pct": 92.5925925925926,
+      "json": "results__Qwen3.json",
+      "csv": "results__Qwen3.csv"
+    },
+    {
+      "model": "Qwen3.8-27B-UD-Q4_K_XL",
+      "passed": 26,
+      "total": 27,
+      "score_pct": 96.29629629629629,
+      "json": "results__Qwen3.json",
+      "csv": "results__Qwen3.csv"
+    }
+  ]
+}
