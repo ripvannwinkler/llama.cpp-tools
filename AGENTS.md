@@ -146,6 +146,44 @@ changes the max `ctx-size` that fits in VRAM.
   0.8-2.6 GB**, so anything past ~164k spills to shared memory the moment a
   browser opens. Verified at 163840 on the live router: ~101 t/s at 61k depth,
   **73 t/s at ~161k (near-ceiling)**, VRAM steady at 30.9 GB, no collapse.
+- **f16 KV is the right default on every preset here** — the same A/B was run
+  on all four (3 reps/depth, true depth via `/tokenize`, not `prompt_n`). f16
+  beat the previous quantized KV at every model's deepest measured point:
+
+  | model | before (kv, ctx, spec) | after | gen t/s before -> after |
+  |---|---|---|---|
+  | Qwen3.8-27B  | q8_0/q4_0 262144 n4 p.75 | f16 163840 n4 p.5 | 72 -> 97 @63k |
+  | Qwen3.6-35B  | q8_0/q4_0 262144 n2 p.75 | f16 212992 n4 p.5 | 95 -> 134 @192k |
+  | Gemma-4-31B  | q8_0/q4_0 131072 n3 p.75 | f16 73728 n4 p.5  | 74 -> 97 @~60k |
+  | Muse-Glimmer | q8_0/q8_0 262144 n4 p.6  | f16 262144 n4 p.6 | 80 -> 93 @192k |
+
+  Sizing rule used throughout: pick the largest `ctx-size` that leaves **~2 GB
+  VRAM free** at load. That is not arbitrary — the idle desktop baseline alone
+  swings 0.8-2.6 GB, and WDDM silently spills to shared host memory instead of
+  OOM-ing, so a preset tuned to <1 GB free collapses the moment a browser
+  opens. Measured VRAM per model is in the per-model notes below.
+- **KV cost per token varies hugely by arch — always probe, never extrapolate
+  from another model.** `Qwen3.6-35B` is MoE + hybrid SSM (41 blocks,
+  `full_attention_interval 4`, kv heads 2 x 256) so f16 KV is cheap: it holds
+  212992 in 30.6 GB. `Muse-Glimmer` is cheaper still (3-in-4 sliding window
+  2048, kv heads 2 x 128) — f16 at the full 262144 costs only 28.7 GB, so it
+  lost no context at all. `Gemma-4` is the opposite: `key_length`/
+  `value_length` **512** with 1-in-6 full attention costs ~78 MiB per 1k
+  tokens of f16 KV, so 131072 does not fit and it had to drop to **73728**.
+  That is the one real regression here — Gemma trades 44% of its context for
+  ~32% more speed. Revert it to `q8_0/q4_0 @131072` if long-context Gemma
+  matters more than throughput.
+- Muse-Glimmer also loads at `327680` (29.8 GB), but its preset yarn-scales
+  from a native 131072 by `rope-scale 2` = 262144. Going past that would
+  exceed the configured yarn target, so ctx was left at 262144 deliberately —
+  it is a quality ceiling, not a VRAM one.
+- Speculative retune: `spec-draft-n-max 4` + `spec-draft-p-min 0.5` won on
+  Qwen3.8-27B, Qwen3.6-35B and Gemma-4 (on the 35B: 137/117/95 -> 158/150/134
+  t/s at 31k/126k/192k, the single biggest win of this pass). Muse-Glimmer
+  kept `n-max 4 / p-min 0.6` — `n6/p0.5` was better at 63k but worse at 192k
+  with overlapping ranges, i.e. not a real win. Note `n-max` costs VRAM
+  (draft batch buffers): on the 35B, raising 2 -> 4 added ~425 MiB, which is
+  why its ctx is 212992 and not the 229376 that fit at `n-max 2`.
 - **Dropping the `mmproj =` line does NOT disable vision.** The router
   auto-discovers any `*.gguf` in the model dir whose filename contains
   "mmproj" (`common/preset.cpp` `is_mmproj_file`) and re-adds `--mmproj` to the
