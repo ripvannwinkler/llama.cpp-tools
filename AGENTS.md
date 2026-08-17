@@ -255,15 +255,21 @@ changes the max `ctx-size` that fits in VRAM.
     invert — don't use an easy question to test this.) Confirming the silent
     drop: a top-level `reasoning_effort: "low"` produced a trace byte-identical
     to explicit `medium`, i.e. it fell through to the preset default.
-  - Preset explicitly sets `xhigh` (matching the template's own default) with
-    `reasoning-budget = 8192` (raised from the 4096 the other presets use,
-    precisely because this model's traces run long). A low budget plus
-    `xhigh` is the combination to watch for — `xhigh` is
-    explicitly the "extensive reasoning, validate assumptions" mode and will
-    hit the budget and trigger `--reasoning-budget-message` injection on
-    harder prompts.
+  - Preset explicitly sets `xhigh` (matching the template's own default).
+    `reasoning-budget` (`8192` here, `4096` on Qwen3.6) was removed
+    repo-wide (2026-08-16) — it's a sampler that forces the end-of-thinking
+    tag once a token count is hit
+    (`common/reasoning-budget.cpp`), **not** a separate memory allocation:
+    reasoning tokens are generated and cached exactly like any other output
+    token, so they were always coming out of the same `ctx-size`/`max_tokens`
+    budget as everything else, not some extra pool on top of it. Removing
+    the cap just lets a model think as long as it wants within that shared
+    budget; `xhigh` traces running long is still a real risk of eating into
+    the visible answer's token budget (`finish_reason: "length"` with empty
+    `content`), it just isn't mitigated by `reasoning-budget` anymore — watch
+    `max_tokens` per request instead.
     (`reasoning-budget` accepts `-1` unrestricted / `0` immediate end / `N>0`
-    token budget — `common/arg.cpp`.)
+    token budget — `common/arg.cpp` — for reference, if ever reintroduced.)
 - **`Ornith-1.0-35B`** (`deepreinforce-ai/Ornith-1.0-35B`, agentic coding
   model, Qwen3.5-MoE-based) — an NVFP4 quant was tried first
   (`s-batman/Ornith-1.0-35B-NVFP4-MTP-GGUF`, Blackwell-native, the 5090's CUDA
