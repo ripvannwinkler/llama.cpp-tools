@@ -101,12 +101,59 @@ changes the max `ctx-size` that fits in VRAM.
   These sampler values are not part of the `ctx-size` mirroring contract above —
   the external configs don't carry them.
 - Speculative decoding: the 27B's gguf ships MTP layers built-in
-  (`spec-type = draft-mtp`, 71 -> 146 t/s greedy coding). The 35B NVFP4
+  (`spec-type = draft-mtp`; `qwen35.nextn_predict_layers = 1` +
+  `blk.64.nextn.*` tensors, so no `spec-draft-model` sidecar is needed —
+  71 -> 146 t/s greedy coding on the older NVFP4 quant). The 35B NVFP4
   and Ornith exit on load if `spec-type` is set (MTP was stripped in those
   quants). The unsloth Gemma-4-31B-it GGUF ships a separate
   `mtp-gemma-4-31B-it.gguf` drafter (Q8_0) that works with any quant of
   the same model — configure via `spec-draft-model` + `spec-type = draft-mtp`
   + `spec-draft-n-max 4` (70 -> 101 tok/s on Q4_K_M).
+- **KV-cache quant, not MTP, is what costs gen speed in the deep tail on
+  `Qwen3.8-27B-UD-Q4_K_XL`.** Draft acceptance held 79-86% across every
+  variant benched, so a slow-at-depth reading is a KV/VRAM problem — check
+  those before touching `spec-*`.
+  Matched A/B at `ctx-size 131072`, `spec-draft-n-max 4`, `p-min 0.5`,
+  400-tok gen, **3 reps** (mean, range):
+
+  | depth | `q8_0/q8_0` | `f16/f16` |
+  |---|---|---|
+  | ~0    | 127 (118-139) | 120 (101-143) |
+  | 57.6k | 104 (96-109)  | 112 (97-132)  |
+  | 63.4k | **75 (72-78)**  | **95 (92-99)**  |
+
+  Only the 63.4k row separates cleanly (f16 +27%); at <=57k the gap is <=8%
+  with overlapping ranges, i.e. noise at 3 reps. Short-gen runs vary +/-10%
+  because draft acceptance swings 58-78% run to run — **do not tune off
+  single runs at shallow depth**, which an earlier version of this note did.
+  VRAM: `q8_0/q8_0` 27.1 GB vs `f16/f16` 30.3 GB of 32.6 (both at 131072 with
+  the vision tower loaded). `q8_0/q8_0` is the reasonable swap if that ~3 GB of
+  headroom is needed back (browser/game running), costing ~21% only past ~60k.
+  Separately, `q8_0/q8_0 @262k` measured 51 t/s at 63k — that is **VRAM
+  spill**, not dequant cost: it puts VRAM at 31.7/32.6 GB where WDDM falls
+  back to shared host memory instead of OOM-ing. Same KV types at 131k give
+  75. Don't read that 51 as the price of q8.
+  `spec-draft-p-min`: `0.75` cut mean draft length to ~2 of the allowed 4;
+  `0.5` drafts more, accepts a lower fraction, and nets faster.
+  `spec-draft-n-max 6` beat 4 only at shallow depth and lost at 57k, so 4 stays.
+- **Max ctx for `Qwen3.8-27B-UD-Q4_K_XL` at f16 KV with no vision tower is
+  163840** (settled value). Load-only VRAM probe on the 32.6 GB 5090, f16/f16,
+  no mmproj — `139264` 28.7 GB | `147456` 29.3 GB | `155648` 29.9 GB |
+  **`163840` 30.6 GB** | `172032` 31.1 GB | `180224` 31.9 GB | `188416` 32.1 GB
+  | `196608` 32.0 GB (595 MiB free, shared climbing) | `229376`+ fails to
+  create the context. Above 163840 headroom collapses for little gain (172032
+  costs 576 MiB for +8k tokens), and the **idle desktop baseline alone swings
+  0.8-2.6 GB**, so anything past ~164k spills to shared memory the moment a
+  browser opens. Verified at 163840 on the live router: ~101 t/s at 61k depth,
+  **73 t/s at ~161k (near-ceiling)**, VRAM steady at 30.9 GB, no collapse.
+- **Dropping the `mmproj =` line does NOT disable vision.** The router
+  auto-discovers any `*.gguf` in the model dir whose filename contains
+  "mmproj" (`common/preset.cpp` `is_mmproj_file`) and re-adds `--mmproj` to the
+  child argv — confirmed by reading the resolved args from `/models`. To
+  actually free that VRAM, rename the file (here:
+  `mmproj-BF16.gguf` -> `mmproj-BF16.gguf.old`), or pass `--no-mmproj`.
+  Always confirm via `/models` -> `status.args` rather than assuming the
+  preset edit took.
 - `cache-reuse = 256` is enabled on the long-context presets and confirmed
   to help: on `Qwen3.6-27B-UD-Q4_K_XL`, re-sending an ~8k-token prompt with
   a couple of tokens prepended (simulating a shifted/edited conversation
