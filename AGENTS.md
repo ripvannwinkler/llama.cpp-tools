@@ -372,6 +372,22 @@ changes the max `ctx-size` that fits in VRAM.
     `max_tokens` per request instead.
     (`reasoning-budget` accepts `-1` unrestricted / `0` immediate end / `N>0`
     token budget — `common/arg.cpp` — for reference, if ever reintroduced.)
+- **`Qwen-Sharp-Chat-Template.jinja` installed on both Qwen presets
+  (2026-08-18)** — downloaded from the community HF repo
+  `peculiar-ragdoll/Qwen-Sharp-Chat-Templates` (`chat_template.jinja`,
+  based on froggeric's Qwen3.8 template, version tag
+  `qwen3.8-froggeric-v22.1`). Replaced `Qwen3-Fixed-Chat-Template.jinja` on
+  the 35B MoE preset and newly wired a `chat-template-file` into the 27B
+  preset (which previously relied on its embedded template). Unlike the
+  old "Fixed" templates, which were bugfix-only, this one also **injects an
+  opinionated terseness system prompt** ("Answer directly, after
+  thinking...") whenever the request has no explicit system message —
+  a deliberate behavior change, not just a parsing fix. It also handles
+  `reasoning_effort` (low/medium/xhigh) and JSON/XML tool-call formatting,
+  same as before. The old `Qwen3-Fixed-Chat-Template.jinja` file was left
+  on disk (unreferenced) for rollback. If either Qwen preset starts
+  misbehaving on tool calls or reasoning parsing, this template swap is the
+  first thing to suspect/revert.
 - **`Qwen3.6-35B-A3B-MXFP4_MOE-BF16`** (`Qwen3.6-35B-A3B-MTP-MXFP4_MOE_BF16.gguf`) —
   the 35B MoE slot, replacing the older `Qwen3.6-35B-A3B-NVFP4` quant. The
   current file ships MTP built-in (the `-MTP-` in the filename), so
