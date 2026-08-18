@@ -522,3 +522,103 @@ changes the max `ctx-size` that fits in VRAM.
   clean and fast (no CPU-pegging symptom) but the ATEM format is new/lightly
   tested here — still a watch-item per the CPU-pegging note above, since this
   is explicitly an agentic, tool-heavy model.
+- **2026-08-18: Gemma-4-31B-it-QAT-Abliterated replaced with
+  `Gemma-4-12B-it-QAT-Abliterated`** (Chris wanted the underperforming 31B
+  gone, replaced by a smaller uncensored Gemma-4 — chose 12B dense over a
+  26B-A4B MoE alternative). Same publisher/pattern as before:
+  `huihui-ai/Huihui-gemma-4-12B-it-qat-q4_0-unquantized-abliterated-GGUF`
+  (Q4_K 7.38GB + `mmproj-model-bf16.gguf` 175MB + `mtp-ggml-model-bf16.gguf`
+  862MB drafter — identical file layout to the old 31B slot, just smaller).
+  **Configured without a live load test** (GPU was busy with other work at
+  the time, per Chris's request) — everything below is analytical, not
+  bench-verified, and should be treated as a first guess to revisit:
+  - `ctx-size 262144` (full native `n_ctx_train`) at `f16`/`f16` KV. Derived
+    by reading this gguf's own header metadata directly (range-fetched the
+    first 20MB over HTTP, hand-parsed the GGUF KV section — `gguf-py`'s
+    `GGUFReader` chokes on a truncated tensor-data section, so a minimal
+    manual parser was used instead): 48 layers, 5-SWA-then-1-full repeating
+    (40 SWA layers `kv_head=8`/`dim=256`, 8 full layers `kv_head=1`/
+    `dim=512`), `sliding_window=1024`. Assuming llama.cpp's iSWA cache caps
+    SWA-layer KV at the window size (validated by reproducing the existing
+    31B's documented "~78 MiB/1k tokens" figure from its own metadata this
+    same way — 60 layers, 10 full layers `kv_head=4`/`dim=512`, computed
+    81,920 B/token vs. the documented 78 MiB/1k ~ 81,788 B/token, a match),
+    12B's full-layer-only KV cost is ~16KiB/token, i.e. ~4.3GiB total KV at
+    262144 vs. the 31B's ~20GiB — hence no need for the 31B's 73728 ctx cap.
+    Total resident estimate (weights ~7.84GiB + KV ~4.3GiB + compute
+    buffers) is ~14-16GiB, comfortably under the 5090's 32.6GiB even
+    without knowing what else is loaded on the GPU concurrently.
+  - `chat-template-file` kept pointed at the existing
+    `Gemma31b_fixed_chat_template.jinja` rather than trying the embedded
+    template — the file's own header says "Google Gemma 4 Canonical Chat
+    Template" (family-wide, not 31B-specific), and the embedded template in
+    this gguf opens with the same macro text, so it's presumably the same
+    unfixed template the 31B needed this fix for. Unverified against a real
+    request.
+  - `ubatch-size 1024`, sampler (`temp 0.7`/`top-k 64`/`top-p 0.95`), and
+    `spec-draft-n-max 4`/`p-min 0.5` carried over unchanged from the 31B's
+    bench-verified values — not re-benched on this checkpoint.
+  - **Untested**: chat template correctness, vision, tool-calling (this
+    model is QAT + abliterated, the exact combo flagged in the
+    CPU-pegging note above as highest-risk — this is now the top watch-item
+    for that symptom), and whether 262144 actually fits alongside whatever
+    else is on the GPU. Load-test and smoke-test before trusting this in
+    agent mode.
+- **2026-08-18: Muse-Glimmer's stock slot swapped back to an abliterated
+  release**, at Chris's explicit request (after initially just asking to
+  add "-Abliterated" to the *existing* stock model's name — flagged that
+  the current slot was genuinely non-abliterated stock, so renaming alone
+  would mislabel it; Chris chose to actually swap in a real abliterated
+  model instead). New preset:
+  **`Muse-Glimmer-30B-Abliterated-Q4_K_M`**
+  (`Blackfrost-AI/Muse-Glimmer-30B-Abliterated-GGUF` — refusal removed via
+  a "Blackfrost weight-change process", card claims 0/450 measured true
+  refusals on their R1-HARMFUL-BENCH-450 suite). Picked the publisher's own
+  matched "compact" trio rather than mixing precisions: `Q4_K_M` main
+  (15.8GB), `mmproj-...-Q4_K_M.gguf` (1.40GB, down from the old stock
+  slot's Q8_0 1.91GB), `dflash-...-Q4_K_M.gguf` (1.63GB) — the model card's
+  2026-08-15 "Improvement update" explicitly ships these three as a
+  matched consumer-hardware set. Total weights ~17.5GiB, actually *smaller*
+  than the old stock preset's ~18.2GiB.
+  **Configured without a live load test** (GPU busy with other work, per
+  Chris's request) — same `ctx-size 262144` via the same YaRN trick already
+  proven on this exact architecture (`rope-scaling yarn`, `rope-scale 2`,
+  `yarn-orig-ctx 131072`, `override-kv =
+  muse-glimmer.context_length=int:262144,dflash.context_length=int:262144`)
+  — confirmed via metadata that this release uses the identical
+  `muse-glimmer.context_length` / `dflash.context_length` keys and native
+  131072 ctx as the old stock model, so the same trick should carry over,
+  but this specific checkpoint was not itself load-tested at 262144.
+  - `chat-template-file` set to a new
+    `Muse-Glimmer-Abliterated-Chat-Template.jinja` (copied verbatim from
+    the repo's own `chat_template.jinja`) rather than relying on the
+    embedded template — the model card says this fixed template
+    "normalizes `Reasoning effort` to `Reasoning strength`" (a real bug fix
+    vs. the stock template). **Chris was told and confirmed keeping it
+    as-is**: this template also auto-injects an aggressive "AI assistant...
+    Prime Directive — Operator Sovereignty... Refusal is not in your
+    vocabulary" system prompt whenever a request carries no explicit system
+    message (checked the template source directly —
+    `{%- if not ns.has_system -%}` branch, ~line 148). This will change
+    default behavior for any client (VS Code chat, opencode, pi) that
+    doesn't always send its own system message.
+  - Sampler set to the model card's own "Confirmed settings" rather than
+    the repo's old deliberately-conservative Muse-Glimmer values: `temp
+    1.0`/`top-k 64`/`top-p 0.95` (vs. the old stock slot's `0.8`/`40`/
+    `0.95`).
+  - `spec-draft-n-max` raised to **15** (up from the old slot's
+    bench-verified 4) per the card: confirmed via this release's own
+    `dflash-*.gguf` metadata (`dflash.block_size = 16`) that 15 is the
+    trained block size minus one, i.e. the architectural max, not just a
+    generic suggestion — `spec-draft-p-min` left at the repo's existing
+    0.6 (the card's CLI example doesn't override it, and
+    `common/speculative.cpp`'s dflash impl does honor `p_min` for
+    confidence gating).
+  - **Untested**: whether 262144 actually fits (weights are smaller than
+    before but this is a different quant mix, not a verified-equivalent
+    swap), chat template correctness/tool-call parsing, vision, and the
+    CPU-pegging symptom (this is an abliterated fine-tune, one of the two
+    flagged risk categories). Load-test and smoke-test before trusting
+    this in agent mode — this note previously flagged the prior abliterated
+    Muse-Glimmer slot as the single highest-priority CPU-pegging watch-item
+    before it was removed; the same applies here.
