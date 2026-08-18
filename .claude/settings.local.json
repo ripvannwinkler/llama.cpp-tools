@@ -15,7 +15,8 @@
       "Read(//c/Users/Chris/.config/opencode\" 2>/dev/**)",
       "Bash(./src/.venv/Scripts/gguf-dump.exe --no-tensors \"models/Qwen3.6-35B-A3B-UD-Q4_K_XL_MTP/Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf\")",
       "Bash(where pi *)",
-      "Bash(npm root *)"
+      "Bash(npm root *)",
+      "Bash(pip show *)"
     ]
   }
 }
