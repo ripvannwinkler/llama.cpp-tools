@@ -13,6 +13,11 @@ config, the tray app, and the external tools that mirror its model list.
   Precedence: CLI args > `[model-id]` section > `[*]` global default.
 - `models/` — one folder per model (gguf + optional mmproj), auto-scanned by
   the router using `--models-dir`.
+- `templates/` — custom chat templates referenced by `chat-template-file`
+  in `models.ini` (`Qwen3-Fixed-Chat-Template.jinja`,
+  `Gemma31b_fixed_chat_template.jinja`, plus older ones).
+- `llama_tool_eval_all_models_v2.py` + `results__*.csv`/`results__*.json`
+  — tool-calling eval harness and its per-model result artifacts.
 - `scripts/` — `start-llama.ps1` (launches the router), `stop-llama.ps1`,
   `restart-llama.ps1`, `load.ps1`/`unload-llama.ps1` (per-model load/unload
   via `/models/load`), `bench.ps1`, `update.ps1`, `probe-ctx.ps1`.
@@ -71,22 +76,24 @@ changes the max `ctx-size` that fits in VRAM.
 
 ## Known-good config notes
 
-- `[*]` global defaults: `n-gpu-layers = 99`, `flash-attn = on`,
-  `ctx-size = 8192` fallback.
+- `[*]` global defaults: `n-gpu-layers = auto`, `flash-attn = on`,
+  `ctx-size = 8192` fallback, `temp 0.6`, `min-p 0.0`. Every per-model
+  preset pins `n-gpu-layers = 999`.
 - Every per-model preset should set an explicit `ubatch-size` — a preset
   missing this falls back to llama.cpp's default (512), which at very large
   `ctx-size` can turn model load into a long CPU-bound stall (high CPU,
   server never becomes healthy/ready) rather than a fast GPU-bound one.
-  Bench-verified values: `2048` for the MoE presets (+8.6% prompt
-  processing vs 1024 on the 35B NVFP4), `1024` for the dense 27B (2048
-  gained only 1.3% there).
+  Bench-verified values: `2048` for the MoE 35B (+8.6% prompt processing
+  vs 1024) and for Muse-Glimmer; `1024` for Gemma-4-31B. The dense 27B
+  bench found 2048 gained only 1.3% over 1024, but the 27B preset is now
+  on `2048` anyway (raised along with `batch-size 2048`).
 - **Sampling params** — every preset now states its full sampler set explicitly
   rather than inheriting llama.cpp's defaults (`src/common/common.h`: `temp 0.8`,
   `top_k 40`, `top_p 0.95`, `min_p 0.05`), which match no model card used here.
-  Convention: Qwen3.6 / Ornith (Qwen3.5-MoE-based) get `temp 0.6` / `top-k 20` /
+  Convention: the Qwen3.6-35B MoE preset (Qwen3.5-MoE-based) gets `temp 0.6` / `top-k 20` /
   `top-p 0.95` / `min-p 0.0` — Qwen's published thinking-mode values. Gemma-4
   gets `top-k 64` and `temp 0.7` (the card says `1.0`; `0.7` is a deliberate
-  middle ground for agentic coding). Muse-Glimmer is the least grounded — `0.6` /
+  middle ground for agentic coding). Muse-Glimmer is the least grounded — `0.8` /
   `40` / `0.95` / `0.0`, explicit-and-conservative rather than card-derived.
   **Do not pin a `reasoning = on` preset near-greedy** (the Qwen3.6 presets and
   the Gemma QAT-abliterated one were previously at `temp = 0.1`): Qwen explicitly
@@ -103,12 +110,17 @@ changes the max `ctx-size` that fits in VRAM.
 - Speculative decoding: the 27B's gguf ships MTP layers built-in
   (`spec-type = draft-mtp`; `qwen35.nextn_predict_layers = 1` +
   `blk.64.nextn.*` tensors, so no `spec-draft-model` sidecar is needed —
-  71 -> 146 t/s greedy coding on the older NVFP4 quant). The 35B NVFP4
-  and Ornith exit on load if `spec-type` is set (MTP was stripped in those
-  quants). The unsloth Gemma-4-31B-it GGUF ships a separate
+  71 -> 146 t/s greedy coding on the older NVFP4 quant). The older
+  `Qwen3.6-35B-A3B-NVFP4` quant and the since-removed Ornith exit on load
+  if `spec-type` is set (MTP was stripped in those quants); the current
+  `Qwen3.6-35B-A3B-MXFP4_MOE-BF16` file ships MTP built-in (the `-MTP-`
+  in the filename), so that preset runs `spec-type = draft-mtp` with no
+  sidecar drafter. The unsloth Gemma-4-31B-it release shipped a separate
   `mtp-gemma-4-31B-it.gguf` drafter (Q8_0) that works with any quant of
   the same model — configure via `spec-draft-model` + `spec-type = draft-mtp`
-  + `spec-draft-n-max 4` (70 -> 101 tok/s on Q4_K_M).
+  + `spec-draft-n-max 4` (70 -> 101 tok/s on Q4_K_M); the current
+  QAT-Abliterated slot instead uses the repo's own
+  `mtp-ggml-model-bf16.gguf`.
 - **KV-cache quant, not MTP, is what costs gen speed in the deep tail on
   `Qwen3.8-27B-UD-Q4_K_XL`.** Draft acceptance held 79-86% across every
   variant benched, so a slow-at-depth reading is a KV/VRAM problem — check
@@ -231,8 +243,8 @@ changes the max `ctx-size` that fits in VRAM.
     fine-tune; **no longer present** — replaced by the stock
     `Qwen3.8-27B-NVFP4` release, which smoke-tests clean on tool calling) —
     both categories of model tend to reproduce trigger tokens
-    less reliably than a stock instruct release (e.g.
-    `Qwen3.6-35B-A3B-NVFP4`, unaffected). The original unsloth 31B QAT was
+    less reliably than a stock instruct release (e.g. the current
+    `Qwen3.6-35B-A3B-MXFP4_MOE-BF16` slot, unaffected). The original unsloth 31B QAT was
     removed (`models.ini`, both external configs, and the gguf on disk
     deleted) as it kept hitting this; it was replaced by
     `Gemma-4-26B-A4B-it-QAT`
@@ -246,7 +258,8 @@ changes the max `ctx-size` that fits in VRAM.
     Q4_K quant of the QAT q4_0-unquantized base, abliterated; configured
     with `mmproj-model-bf16.gguf` vision tower, `mtp-ggml-model-bf16.gguf`
     drafter + `spec-type = draft-mtp` `spec-draft-n-max 4`,
-    ctx-size 163840, cache-reuse 256, same custom chat template) — note it
+    ctx-size 73728 — f16 KV cap, gemma4's 512-d KV can't fit 131072, see
+    the f16 KV note above — cache-reuse 256, same custom chat template) — note it
     straddles BOTH flagged categories (QAT quant + abliterated fine-tune),
     so it is the highest-priority watch for the CPU-pegging symptom;
     `toolCalling` is enabled. If another model
@@ -319,7 +332,10 @@ changes the max `ctx-size` that fits in VRAM.
     described a test image (red-to-black gradient) end-to-end. Old NVFP4
     model folder deleted after the new config was confirmed working.
     `spec-draft-n-max 4`/`p-min 0.75` carried over unchanged from the NVFP4
-    tuning above — already strong on the new quant, not re-swept.
+    tuning above — already strong on the new quant, not re-swept at the
+    time (the f16 KV pass later set `p-min 0.5`). Current preset state:
+    f16 KV @ 163840, `p-min 0.5`, vision off (see the `mmproj` note above
+    and the models.ini comments), `batch-size`/`ubatch-size 2048`.
 - **Reasoning effort (`Qwen3.8-27B-UD-Q4_K_XL` only, and the trap that comes with it)** —
   this is the first preset here to use `chat-template-kwargs`. The model's
   template accepts `reasoning_effort` in **`low` / `medium` / `xhigh`**,
@@ -340,7 +356,8 @@ changes the max `ctx-size` that fits in VRAM.
     invert — don't use an easy question to test this.) Confirming the silent
     drop: a top-level `reasoning_effort: "low"` produced a trace byte-identical
     to explicit `medium`, i.e. it fell through to the preset default.
-  - Preset explicitly sets `xhigh` (matching the template's own default).
+  - Preset explicitly sets `medium` (the template's own default is `xhigh`;
+    the kwarg exists precisely to override it deliberately).
     `reasoning-budget` (`8192` here, `4096` on Qwen3.6) was removed
     repo-wide (2026-08-16) — it's a sampler that forces the end-of-thinking
     tag once a token count is hit
@@ -355,8 +372,19 @@ changes the max `ctx-size` that fits in VRAM.
     `max_tokens` per request instead.
     (`reasoning-budget` accepts `-1` unrestricted / `0` immediate end / `N>0`
     token budget — `common/arg.cpp` — for reference, if ever reintroduced.)
-- **`Ornith-1.0-35B`** (`deepreinforce-ai/Ornith-1.0-35B`, agentic coding
-  model, Qwen3.5-MoE-based) — an NVFP4 quant was tried first
+- **`Qwen3.6-35B-A3B-MXFP4_MOE-BF16`** (`Qwen3.6-35B-A3B-MTP-MXFP4_MOE_BF16.gguf`) —
+  the 35B MoE slot, replacing the older `Qwen3.6-35B-A3B-NVFP4` quant. The
+  current file ships MTP built-in (the `-MTP-` in the filename), so
+  `spec-type = draft-mtp` runs with no sidecar drafter. `ctx-size 212992`
+  at f16 KV — the largest ctx leaving ~2 GB headroom; `spec-draft-n-max 4`'
+  s ~425 MiB of draft buffers is why it's not 229376. Custom
+  `Qwen3-Fixed-Chat-Template.jinja`, `reasoning = on` +
+  `reasoning-format = deepseek` + `reasoning-preserve = on`, samplers
+  `temp 0.6` / `top-k 20` / `top-p 0.95` / `min-p 0.0`.
+- **`Ornith-1.0-35B`** — **no longer present** (removed from `models.ini`
+  2026-08-16; model folder deleted; a second `Ornith-1.0-35B-MTP-APEX-I-Quality`
+  preset existed 2026-08-13 -> 08-16). Was: `deepreinforce-ai/Ornith-1.0-35B`,
+  agentic coding model, Qwen3.5-MoE-based. An NVFP4 quant was tried first
   (`s-batman/Ornith-1.0-35B-NVFP4-MTP-GGUF`, Blackwell-native, the 5090's CUDA
   build supports it via `ggml-cuda/mmq-config-blackwell.cuh` +
   `template-instances/mmq-instance-nvfp4.cu`) but the download was cancelled
@@ -381,10 +409,12 @@ changes the max `ctx-size` that fits in VRAM.
   instead (`ServerController.GetDecodeTotalAsync`) — since it's monotonic,
   any increase between polls proves decoding happened sometime in that
   window, no matter how brief. Requires `metrics = on` in the model's
-  preset (added to `[*]` in `models.ini`); `is_processing` is kept as a
-  fallback only for when `/metrics` is unavailable. If a model preset
-  outside `models.ini` (e.g. a per-model override) doesn't inherit `[*]`,
-  auto-unload silently falls back to the old lossy detection for it.
+  preset. It was added to `[*]` for this fix, but `metrics` was removed
+  from `[*]` again on 2026-08-10 (`e8345f0`), so the current presets do
+  NOT expose `/metrics` and auto-unload silently runs on the old lossy
+  `is_processing` fallback for every model. Re-adding `metrics = on` to
+  `[*]` restores the monotonic-counter detection if false-triggering
+  comes back.
 - **`Muse-Glimmer-30B-UD-Q4_K_XL`** (`unsloth/Muse-Glimmer-30B-GGUF`,
   `Muse-Glimmer-30B-UD-Q4_K_XL.gguf`, 14.79GiB) — replaced the abliterated
   `Muse-Glimmer-30B-Abliterated-Q5_K_M` slot with unsloth's stock (non-
@@ -427,8 +457,14 @@ changes the max `ctx-size` that fits in VRAM.
     the training context of the model (131072) - capping"`,
     `server-context.cpp:1200-1204`) — there is no flag to override this. Net
     effect was strictly worse: +1.5GiB VRAM for a KV cache that's never
-    actually used past 131072. Reverted. Don't retry this without patching
-    upstream `src/` (which `scripts/update.ps1` would overwrite anyway).
+    actually used past 131072. Reverted. **Superseded 2026-08-17:** ctx
+    went back to 262144 with `rope-scaling yarn` + `rope-scale 2` +
+    `yarn-orig-ctx 131072` **plus**
+    `override-kv = muse-glimmer.context_length=int:262144,dflash.context_length=int:262144` —
+    rewriting the model's own `context_length` metadata to 262144 means
+    `n_ctx_train` is 262144 and the cap never fires, so no `src/` patch is
+    needed. It demonstrably works: the f16 KV pass benched real requests at
+    192k depth on this preset (see the table above).
     Separately, `fit = on` interacts badly with `spec-draft-model` at an
     out-of-training ctx-size — its memory-fitting pass tries to measure the
     draft model at the oversized ctx and fails (`dflash requires ctx_other to
@@ -438,7 +474,9 @@ changes the max `ctx-size` that fits in VRAM.
   presets, Gemma, and briefly Muse-Glimmer) at Chris's request. All four
   affected presets were reloaded afterward and confirmed to still load
   cleanly at their explicit `ctx-size` with no regression.
-- **`Muse-Glimmer-30B-UD-Q6_K_XL`** (Meta's agentic multimodal 30B, dense —
+- **`Muse-Glimmer-30B-UD-Q6_K_XL`** — **no longer present** (replaced by
+  the `Muse-Glimmer-30B-UD-Q4_K_XL` preset above; model folder deleted;
+  kept for its bench numbers). Was: Meta's agentic multimodal 30B, dense —
   not MoE; Gemma3-family sliding-window attention with `final_logit_softcapping`
   / `logit_scale`, embedded "Onyx ATEM" tool-calling chat template) — the
   architecture (`muse-glimmer`) wasn't in the vendored source when the model
