@@ -31,13 +31,16 @@ config, the tray app, and the external tools that mirror its model list.
 
 ## Downloading models
 
-Use `hf download <repo> <file> --local-dir D:\llama.cpp\models\<model-id>` rather
-than raw `curl` — `HF_HOME` is already set to `d:\.huggingface`, so it picks up
-the cache and the configured token (faster/authenticated where that matters,
-e.g. gated repos) automatically with no extra flags. Verify the finished file's
-size against the repo's authoritative `Content-Length` (`curl -sIL <url>`)
-regardless of which method downloaded it — don't trust a clean exit code alone,
-a dropped connection can leave a silently truncated file.
+Use `uvx hf download <repo> <file> --local-dir D:\llama.cpp\models\<model-id>`
+rather than raw `curl` — a bare `hf` is not on PATH (no global Python/pip
+install of the `huggingface_hub` CLI), so it must be run via `uvx hf ...`
+(uv fetches/caches the tool on first use). `HF_HOME` is already set to
+`d:\.huggingface`, so it picks up the cache and the configured token
+(faster/authenticated where that matters, e.g. gated repos) automatically
+with no extra flags. Verify the finished file's size against the repo's
+authoritative `Content-Length` (`curl -sIL <url>`) regardless of which method
+downloaded it — don't trust a clean exit code alone, a dropped connection can
+leave a silently truncated file.
 
 ## Related tools — update whenever model params change
 
@@ -564,6 +567,37 @@ changes the max `ctx-size` that fits in VRAM.
     for that symptom), and whether 262144 actually fits alongside whatever
     else is on the GPU. Load-test and smoke-test before trusting this in
     agent mode.
+- **`Ornith-1.5-35B-A3B-Q4_K_M`** (2026-08-19, `ornith-ai/Ornith-1.5-35B-A3B-GGUF`,
+  `Ornith-1.5-35B-Q4_K_M.gguf` 21.7GB + `mmproj-Ornith-1.5-35B-BF16.gguf` 903MB) — new
+  MoE 35B-A3B reasoning/coding slot, arch `qwen35moe` (41 blocks, hybrid SSM/attention,
+  `full_attention_interval 4`, 256 experts/8 active, same family shape as
+  `Qwen3.6-35B-A3B-MXFP4_MOE-BF16`). Base HF repo (`ornith-ai/Ornith-1.5-35B-A3B`) ships
+  only safetensors; GGUF quants live in the sibling `-GGUF` repo.
+  - **Load-tested for real** (`llama-bench`/`llama-server` probes, GPU free at the time):
+    full native `n_ctx_train` **262144** loads fine text-only (31099/32607MiB, ~1.5GB
+    headroom, no mmproj). With `mmproj` also loaded, Chris asked for ≥2.5GB headroom;
+    `163840` gave 2.87GB but Chris chose to keep **`196608`** instead (measured
+    30393/32607MiB used = **~2.16GB headroom** with mmproj loaded — a deliberate
+    accepted tradeoff, not the ≥2.5GB target).
+  - **MTP tensors present but not usable**: gguf metadata has
+    `qwen35moe.nextn_predict_layers = 1` and `blk.40.nextn.{eh_proj,enorm,hnorm,
+    shared_head_norm}.weight` tensors (confirmed via `uvx --from gguf gguf-dump`,
+    `PYTHONIOENCODING=utf-8` needed on Windows or it crashes on BPE merge unicode).
+    At load, `llama-server` logs every `blk.40.*` tensor including all four `nextn.*`
+    ones as **"unused tensor ... ignoring"** — so unlike the 27B/35B MXFP4 slots,
+    `spec-type = draft-mtp` would not actually get speculative decoding here. Left
+    unset. Worth re-checking after a `scripts\update.ps1` pull in case upstream support
+    for this arch's MTP layout lands later.
+  - No `chat-template-file` — embedded `tokenizer.chat_template` verified directly via
+    real requests: reasoning (`reasoning_content`/`content` split correctly), tool-calling
+    (`tool_choice: auto` returned a correct call in ~1s, no CPU-pegging symptom — this is
+    a stock, non-abliterated release), and vision (mmproj loaded, a real base64 image
+    request correctly identified color) all smoke-tested clean.
+  - Sampler (`temp 0.6`/`top-k 20`/`top-p 0.95`/`min-p 0.0`) and `reasoning-format
+    deepseek` / `reasoning-preserve on` per the model card's `<think>`-tag convention,
+    matching the repo's other Qwen3.5/3.6-family reasoning presets.
+  - `toolCalling` enabled in `chatLanguageModels.json` given the clean tool-call smoke
+    test above.
 - **2026-08-18: Muse-Glimmer's stock slot swapped back to an abliterated
   release**, at Chris's explicit request (after initially just asking to
   add "-Abliterated" to the *existing* stock model's name — flagged that
