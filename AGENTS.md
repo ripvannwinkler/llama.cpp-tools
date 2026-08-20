@@ -598,6 +598,41 @@ changes the max `ctx-size` that fits in VRAM.
     matching the repo's other Qwen3.5/3.6-family reasoning presets.
   - `toolCalling` enabled in `chatLanguageModels.json` given the clean tool-call smoke
     test above.
+- **2026-08-19: Stock `Qwen3.8-27B-UD-Q4_K_M` added alongside the abliterated
+  slot** (`unsloth/Qwen3.8-27B-GGUF`, `Qwen3.8-27B-UD-Q4_K_M.gguf` 16.46GB +
+  `mmproj-BF16.gguf` 931MB) — brings back a stock (non-abliterated) 27B,
+  which had previously existed as `Qwen3.8-27B-UD-Q4_K_XL` before that slot
+  was removed and replaced by `Qwen3.8-27B-abliterated-Q4_K`; this is now a
+  third preset family, not a replacement. Same `qwen35` arch, same
+  `chat_template_kwargs.reasoning_effort` mechanism, confirmed via the HF
+  API. Three presets (low/medium/xhigh), same naming convention as the
+  abliterated block.
+  - **MTP tensors confirmed present** via `gguf-dump` before enabling spec
+    decode (not assumed): `qwen35.block_count = 65`,
+    `qwen35.nextn_predict_layers = 1`, `blk.64.nextn.{eh_proj,enorm,hnorm,
+    shared_head_norm}.weight` all present — same layout as the old
+    Q4_K_XL slot. Configured `spec-type = draft-mtp`,
+    `spec-draft-n-max 4` / `spec-draft-p-min 0.5` (carried over from the
+    f16 KV pass values, not re-benched on this quant).
+  - `ctx-size 163840` at `f16`/`f16` KV, with `mmproj-BF16.gguf` vision
+    wired in — the same ctx value the old Q4_K_XL slot settled on with
+    vision loaded (2.03GiB headroom there at 17.56GB+887MB weights); this
+    Q4_K_M file is ~1.1GB smaller, so headroom should be equal or better.
+    **Not load-tested this pass** (Chris explicitly opted out of a live
+    load test) — VRAM fit, chat-template-file correctness, tool-calling,
+    and vision are all unverified. Load-test and smoke-test before
+    trusting this in agent mode, same caveat as other un-tested presets
+    in this file.
+  - `temp = 1.0` carried over from the old Q4_K_XL slot's documented
+    exception (Qwen's own published thinking-mode value for this base
+    model) — `top-k 20`/`top-p 0.95`/`min-p 0.0` otherwise match the
+    repo's Qwen convention.
+  - `chat-template-file` set to `Qwen-Sharp-Chat-Template.jinja` (the old
+    Q4_K_XL slot predated that template and used the embedded one; this
+    new slot uses it from the start for consistency with the abliterated
+    27B and the 35B MoE presets).
+  - `batch-size`/`ubatch-size 2048`, matching the old Q4_K_XL slot's final
+    tuned values (not re-benched here).
 - **2026-08-18: Muse-Glimmer's stock slot swapped back to an abliterated
   release**, at Chris's explicit request (after initially just asking to
   add "-Abliterated" to the *existing* stock model's name — flagged that
