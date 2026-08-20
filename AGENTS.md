@@ -633,6 +633,10 @@ changes the max `ctx-size` that fits in VRAM.
     27B and the 35B MoE presets).
   - `batch-size`/`ubatch-size 2048`, matching the old Q4_K_XL slot's final
     tuned values (not re-benched here).
+- **2026-08-20: `Qwen3.8-27B-abliterated-Q4_K` removed** (`models.ini`, all
+  three low/medium/xhigh presets, and the gguf on disk deleted) — superseded
+  by the stock `Qwen3.8-27B-UD-Q4_K_M` family added the day before; Chris
+  opted to drop the abliterated 27B slot rather than keep both.
 - **2026-08-18: Muse-Glimmer's stock slot swapped back to an abliterated
   release**, at Chris's explicit request (after initially just asking to
   add "-Abliterated" to the *existing* stock model's name — flagged that
