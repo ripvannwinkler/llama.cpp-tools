@@ -655,13 +655,49 @@ changes the max `ctx-size` that fits in VRAM.
     Integration" claim) — no `spec-draft-model` sidecar needed, same as the
     UD-Q4_K_M family. `spec-draft-n-max 4` / `spec-draft-p-min 0.5` carried
     over unchanged.
-  - **Not load-tested this pass** (Chris explicitly opted out of a live
-    load test) — VRAM fit at `ctx-size 163840` on this quant, chat-template
-    correctness, tool-calling, and vision are all unverified. This quant
-    format is new to this repo (only usable on Blackwell GPUs) so treat the
-    carried-over ctx/sampler values as an untested starting guess, more so
-    than the usual same-quant-family carryover. Load-test and smoke-test
-    before trusting this in agent mode.
+  - **Load-tested 2026-08-21** (initial pass skipped it, Chris asked for a
+    full router pass after): router restarted to pick up the new presets
+    (hot server doesn't reread `models.ini`), then `Qwen3.8-27B-NVFP4-N4_0`
+    (xhigh) loaded through the router at the full `ctx-size 163840` with
+    vision — **31.4/32.6 GB VRAM used, ~1.2GB headroom, no OOM.** That's
+    tighter than the UD-Q4_K_M sibling's measured headroom at the same ctx,
+    consistent with NVFP4 weights being similar size but this being a fresh
+    quant format, not re-benched for max safe ctx on this specific file —
+    if VRAM gets tight from other GPU load, drop ctx before assuming a
+    config bug.
+    Smoke-tested via the OpenAI-compatible endpoint: plain chat (`finish_reason
+    stop`, correct answer, thinking properly separated into
+    `reasoning_content` — chat-template-file + reasoning-format both
+    correct), tool-calling (`finish_reason tool_calls`, correct function
+    name/args), and vision (accurate image description via a data-URI
+    image). MTP confirmed live in the `timings` field (`draft_n`/
+    `draft_n_accepted` around 40-70% acceptance across the three calls),
+    not just present in the gguf metadata. `llama-bench` baseline (no
+    spec-decode, no vision, `-p 1024 -n 256`): pp1024 7619 t/s, tg256
+    83.3 t/s on 14.63GiB weights.
+  - **Live-server prefill/gen perf at small/medium/large depth** (2026-08-21,
+    real HTTP requests against the loaded router, MTP + vision both active,
+    `cache_prompt: false` to force genuine cold prefill — an initial pass
+    was thrown out because `cache-reuse` matched a shared prefix across
+    requests that reused the same filler text, inflating the deep-context
+    numbers):
+
+    | depth | prompt tokens | prefill (pp) | gen (tg) | draft accept |
+    |---|---:|---:|---:|---:|
+    | small  | 2,178   | 2555 t/s | 88.5 t/s | 27/41 (66%) |
+    | medium | 80,179  | 3221 t/s | 81.6 t/s | 32/38 (84%) |
+    | large  | 133,579 | 2035 t/s | 84.6 t/s | 43/46 (93%) |
+
+    Prefill peaks mid-depth and drops off at large depth, consistent with
+    the KV-cache-cost-at-depth pattern already documented above for
+    `Q4_K_XL`. Generation speed stays flat (81-89 t/s) across depth and
+    lands close to the no-MTP `llama-bench` baseline (83.3 t/s) despite
+    MTP being active — draft acceptance was decent (66-93%, rising with
+    depth) but didn't net a large speedup here, worth knowing before
+    assuming MTP is buying much at this ctx/VRAM pressure. "Large" landed
+    at 133.6k tokens (~82% of the `163840` ctx ceiling) rather than the
+    145k originally targeted — the filler-text tokenizer ratio came in
+    higher than assumed when sizing the synthetic prompt.
 - **2026-08-18: Muse-Glimmer's stock slot swapped back to an abliterated
   release**, at Chris's explicit request (after initially just asking to
   add "-Abliterated" to the *existing* stock model's name — flagged that
