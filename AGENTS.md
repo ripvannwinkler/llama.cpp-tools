@@ -637,6 +637,31 @@ changes the max `ctx-size` that fits in VRAM.
   three low/medium/xhigh presets, and the gguf on disk deleted) — superseded
   by the stock `Qwen3.8-27B-UD-Q4_K_M` family added the day before; Chris
   opted to drop the abliterated 27B slot rather than keep both.
+- **2026-08-21: `Qwen3.8-27B-NVFP4-N4_0` added as a fourth Qwen3.8-27B
+  preset family** (`akopytko/Qwen3.8-27B-NVFP4-GGUF`,
+  `Qwen3.8-27B-NVFP4-MTP-N4_0.gguf` 15.7GB + `mmproj-BF16.gguf` 931MB) —
+  a Blackwell-native NVFP4 quant (RTX 50-series/DGX Spark/B200/B300 only;
+  per the model card, omits global per-tensor scales and uses quantize-time
+  MSE scale optimization vs. standard NVFP4, ~50% faster than conventional
+  4-bit quants at similar VRAM). Deliberately did **not** pull the sibling
+  `Qwen3.8-27B-NVFP4-MTP-Q6_K.gguf` in the same repo — N4_0 only, per Chris.
+  Same `qwen35` arch as the other three Qwen3.8-27B families, so mirrored
+  the stock `Qwen3.8-27B-UD-Q4_K_M` preset verbatim (three low/medium/xhigh
+  presets, same `ctx-size 163840`, sampler, `chat-template-file
+  Qwen-Sharp-Chat-Template.jinja`, `reasoning-format deepseek`) rather than
+  re-deriving values, since this pass has no load test.
+  - **MTP tensors confirmed present** via `gguf-dump` before enabling
+    `spec-type = draft-mtp` (embedded head, matching the model card's "MTP
+    Integration" claim) — no `spec-draft-model` sidecar needed, same as the
+    UD-Q4_K_M family. `spec-draft-n-max 4` / `spec-draft-p-min 0.5` carried
+    over unchanged.
+  - **Not load-tested this pass** (Chris explicitly opted out of a live
+    load test) — VRAM fit at `ctx-size 163840` on this quant, chat-template
+    correctness, tool-calling, and vision are all unverified. This quant
+    format is new to this repo (only usable on Blackwell GPUs) so treat the
+    carried-over ctx/sampler values as an untested starting guess, more so
+    than the usual same-quant-family carryover. Load-test and smoke-test
+    before trusting this in agent mode.
 - **2026-08-18: Muse-Glimmer's stock slot swapped back to an abliterated
   release**, at Chris's explicit request (after initially just asking to
   add "-Abliterated" to the *existing* stock model's name — flagged that
