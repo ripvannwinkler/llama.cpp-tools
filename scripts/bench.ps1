@@ -20,6 +20,7 @@ param(
     [int]$Reps = 3,         # -r  : repetitions per test
     [int]$NGL = 99,        # -ngl: layers offloaded to GPU (models.ini n-gpu-layers used instead when numeric, unless passed explicitly)
     [ValidateSet('on', 'off', 'auto')][string]$FlashAttn = 'on',  # models.ini flash-attn used instead unless passed explicitly
+    [switch]$NoKVOffload = $false,  # pass -nkvo to llama-bench (force KV cache to CPU RAM, off GPU)
     [switch]$NoUnload               # skip freeing VRAM from the running server first
 )
 
@@ -111,6 +112,7 @@ if ($cfg['ubatch-size']) { $args += @('-ub', $cfg['ubatch-size']) }
 if ($cfg['threads']) { $args += @('-t', $cfg['threads']) }
 if ($cfg['n-cpu-moe']) { $args += @('-ncmoe', $cfg['n-cpu-moe']) }
 if ($cfg['load-mode']) { $args += @('-lm', $cfg['load-mode']) }
+if ($NoKVOffload) { $args += @('-nkvo', '1') }
 
 Write-Host "`nBenchmarking: $($sel.id)" -ForegroundColor Green
 Write-Host "  file : $($sel.path)"

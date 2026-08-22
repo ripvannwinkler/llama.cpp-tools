@@ -1,7 +1,2 @@
-Qwen3.6-35B-A3B-MXFP4_MOE-BF16=229376 used=30431 total=32607 headroom=2176
-Ornith-1.5-35B-A3B-Q4_K_M=262144 used=29410 total=32607 headroom=3197
-Qwen3.8-27B-UD-Q4_K_M (low)=172032 used=30171 total=32607 headroom=2436
-Qwen3.8-27B-NVFP4-N4_0 (low)=188416 used=30376 total=32607 headroom=2231
-Gemma-4-12B-it-QAT-Abliterated=262144 used=16366 total=32607 headroom=16241
-Muse-Glimmer-30B-Abliterated-Q4_K_M=262144 used=28748 total=32607 headroom=3859
+Qwen3.8-27B-NVFP4-N4_0 (low)=196608 used=32068 total=32607 headroom=539
 DONE
