@@ -18,7 +18,7 @@ if ($existing) { Write-Host "Already listening on $Port (PID $existing). Run sto
 # NOTE: -ngl / -fa intentionally NOT passed here — they live in models.ini [*] so
 # they stay per-model overridable (a CLI arg would override every preset value).
 $argList = @('--models-dir', $modelsDir, '--models-max', $MaxModels,
-             '--parallel', 1,
+             '--parallel', 2, '--kv-unified',
              '--port', $Port, '--host', '127.0.0.1')
 if (Test-Path $preset) { $argList += @('--models-preset', $preset) }
 if ($Ctx -gt 0)        { $argList += @('-c', $Ctx) }   # optional global ctx override
