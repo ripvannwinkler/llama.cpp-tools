@@ -76,21 +76,10 @@ cmake --build build --config Release -j
 
 ## Models
 
-Copied from LM Studio (`C:\Users\Chris\.lmstudio\models`, originals kept). Current ids and the
-verified per-model config (max context that loads on the 32 GB card — see `models.ini`):
-
-| Model id (use in API `model` field) | Type | ctx | KV | ubatch |
-|---|---|---|---|---|
-| `Qwen3.6-35B-A3B-UD-Q4_K_XL_MTP` | 35B MoE, UD-Q4_K_XL, MTP + vision | 196608 | q8_0 | 2048 |
-| `Richarlie__Qwen3.6-27B-Fable-Fusion-711-...-MTP-GGUF` | 27B dense, reasoning, Q4_K_M | 262144 | q8_0 | 1024 |
-| `lmstudio-community__gemma-4-31B-it-QAT-GGUF` | 31B, reasoning, QAT Q4_0 | 262144 | **q5_1** | 512 |
-| `lmstudio-community__Qwen3-VL-8B-Instruct-GGUF` | 8B vision, Q8_0 | 262144 | q8_0 | 1024 |
-| `mradermacher__Qwen2.5-VL-7B-NSFW-Caption-V3-abliterated-GGUF` | 7B vision, Q8_0 | 128000 | q8_0 | 1024 |
-| `qwen3-vl-8b-lite` | 8B vision (same file), low-footprint | 8192 | q8_0 | 1024 |
-
-Notes: gemma uses **q5_1** KV (one scale below q8) so its full 262144 context fits with headroom;
-q8 only reached 196608. The 7B caps at its trained max of 128000. gemma keeps `ubatch = 512` (tight VRAM);
-raising it would OOM. `qwen3-vl-8b-lite` is a second preset pointing at the 8B's file (see below).
+`models.ini` is the source of truth for the current model list and per-model config (ctx-size,
+KV quant, ubatch, etc.) — each `[section]` header there is a model id usable in the API `model`
+field. Don't duplicate those values here; read `models.ini` directly, or `GET /v1/models` on the
+running router.
 
 ### Adding a model
 
