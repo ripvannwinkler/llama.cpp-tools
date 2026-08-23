@@ -834,3 +834,45 @@ changes the max `ctx-size` that fits in VRAM.
     budget is a backstop for worse cases, not something that fired on this
     particular retest. This is currently the only preset in the repo with
     `reasoning-budget` set again since the repo-wide removal.
+- **2026-08-23: `Gemma-4-26B-A4B-it-QAT` replaced with
+  `Gemma-4-26B-A4B-it-UD-Q6_K`** (Chris's request — swap the QAT quant for the
+  stock instruct release, then delete the old QAT model entirely). New files
+  from the sibling `unsloth/gemma-4-26B-A4B-it-GGUF` repo (same matched-set
+  layout as the old QAT repo): `gemma-4-26B-A4B-it-UD-Q6_K.gguf` (23.2GB,
+  stock — not QAT) + `mmproj-BF16.gguf` (1.19GB, identical filename/size to
+  the old repo's) + `MTP/mtp-gemma-4-26B-A4B-it-Q8_0.gguf` (462MB, identical
+  filename/size). All three verified byte-for-byte against HF's
+  `Content-Length` before being moved into
+  `models\Gemma-4-26B-A4B-it-UD-Q6_K\`. Old `Gemma-4-26B-A4B-it-QAT` folder
+  (14.25GB main + same mmproj/drafter) deleted after `models.ini` and all
+  three external configs were updated.
+  - **`ctx-size` is a provisional, unverified estimate — not load-tested**
+    (Chris explicitly skipped load verification this pass). The old QAT
+    preset used only ~26.5/32.6GiB at `ctx-size 262144` (~6.1GiB headroom),
+    but the new UD-Q6_K main weight is ~8.95GB heavier (23.2GB vs 14.25GB),
+    which would eat most or all of that headroom at the same ctx. Backed out
+    a rough per-token KV cost from the old figures and picked
+    `ctx-size = 98304` as a deliberately conservative value (well under the
+    ~130K the rough math suggested would fit) rather than trust an unverified
+    estimate near the edge. **Run `scripts\probe-ctx-headroom.ps1` or
+    `scripts\load.ps1 -Name Gemma-4-26B-A4B-it-UD-Q6_K` before relying on this
+    in agent mode** — the real headroom could support a materially larger
+    `ctx-size`, or (less likely, given the conservative margin) still be
+    tight; either way this number hasn't been measured on real hardware.
+  - Everything else (sampler, `spec-type draft-mtp` + `spec-draft-n-max 4` /
+    `p-min 0.5`, `reasoning-budget 8192`, `cache-type-k/v f16/f16`,
+    `chat-template-file Gemma31b_fixed_chat_template.jinja`, `batch-size 4096`
+    / `ubatch-size 1024`) carried over unchanged from the QAT preset — none of
+    it re-benched on this checkpoint.
+  - **Not smoke-tested** (no load test run this pass): chat-template
+    correctness, vision, tool-calling, and MTP speculative decoding are all
+    unverified on this specific stock checkpoint, despite the same
+    template/arch family having smoke-tested clean on the QAT sibling when it
+    was added. This is a **stock instruct release**, not QAT — per the
+    CPU-pegging note above, that's actually the lower-risk category for
+    unreliable tool-call triggers, but it's still unverified here.
+  - A leftover empty `models\.staging-Gemma-4-26B-A4B-it-UD-Q6_K\` directory
+    could not be deleted (Windows reported it "in use" even after all three
+    files were moved out of it and no obvious process held it) — harmless
+    (empty, no gguf inside, hidden-style dot-prefix name) but worth clearing
+    manually next time the models folder is touched.
