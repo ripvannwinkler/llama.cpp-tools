@@ -614,15 +614,16 @@ changes the max `ctx-size` that fits in VRAM.
     Q4_K_XL slot. Configured `spec-type = draft-mtp`,
     `spec-draft-n-max 4` / `spec-draft-p-min 0.5` (carried over from the
     f16 KV pass values, not re-benched on this quant).
-  - `ctx-size 163840` at `f16`/`f16` KV, with `mmproj-BF16.gguf` vision
-    wired in — the same ctx value the old Q4_K_XL slot settled on with
-    vision loaded (2.03GiB headroom there at 17.56GB+887MB weights); this
-    Q4_K_M file is ~1.1GB smaller, so headroom should be equal or better.
-    **Not load-tested this pass** (Chris explicitly opted out of a live
-    load test) — VRAM fit, chat-template-file correctness, tool-calling,
-    and vision are all unverified. Load-test and smoke-test before
-    trusting this in agent mode, same caveat as other un-tested presets
-    in this file.
+  - Max context re-tune (2026-08-23): all three presets now run `ctx-size 262144`
+    (the model's native `n_ctx_train`) at `cache-type-k/v q4_0`/`q4_0` instead of
+    the previous 163840/f16. q4_0 KV is ~1/4 the f16 cost per token, which on the
+    32.6 GB 5090 frees enough VRAM to hold the full 262144 native context with
+    the `mmproj-BF16.gguf` vision tower loaded. **Not load-tested** (Chris opted
+    out of a live load test this pass) — VRAM fit, chat-template-file correctness,
+    tool-calling, and vision are all unverified at 262144/q4_0. Load-test and
+    smoke-test before trusting this in agent mode, same caveat as other
+    un-tested presets in this file.
+
   - `temp = 1.0` carried over from the old Q4_K_XL slot's documented
     exception (Qwen's own published thinking-mode value for this base
     model) — `top-k 20`/`top-p 0.95`/`min-p 0.0` otherwise match the
