@@ -788,8 +788,10 @@ changes the max `ctx-size` that fits in VRAM.
     `prompt_tokens` jumped from 29 to 78 once the image was actually embedded).
     **This fix is retroactive** — since both Gemma-4 slots share this template
     file, `Gemma-4-12B-it-QAT-Abliterated`'s vision (previously flagged
-    "untested" in its own note above) should now also work correctly; not
-    independently re-verified on the 12B slot itself.
+    "untested" in its own note above) also benefits. Independently re-verified
+    on the 12B slot itself (2026-08-22): a real base64 image request correctly
+    identified "Blue," `prompt_tokens` 78 (real vision tokens embedded,
+    `finish_reason: stop`) — confirmed fixed, not just theorized.
   - **Context**: `probe-ctx-headroom.ps1` live-tested full native `262144` —
     fits with `26535/32607MiB` used, **~6.1GiB headroom**, no reduction needed.
     Notably roomy for this repo (most presets target ~2GiB) simply because
