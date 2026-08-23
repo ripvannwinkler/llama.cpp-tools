@@ -1,2 +1,2 @@
-Qwen3.8-27B-NVFP4-N4_0 (low)=196608 used=32068 total=32607 headroom=539
+Gemma-4-26B-A4B-it-QAT=262144 used=26535 total=32607 headroom=6072
 DONE

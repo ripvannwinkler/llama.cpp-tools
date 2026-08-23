@@ -756,3 +756,79 @@ changes the max `ctx-size` that fits in VRAM.
     this in agent mode — this note previously flagged the prior abliterated
     Muse-Glimmer slot as the single highest-priority CPU-pegging watch-item
     before it was removed; the same applies here.
+- **2026-08-22: `Gemma-4-26B-A4B-it-QAT` added** (`unsloth/gemma-4-26B-A4B-it-qat-GGUF`,
+  `gemma-4-26B-A4B-it-qat-UD-Q4_K_XL.gguf` 14.25GB + `mmproj-BF16.gguf` 1.19GB +
+  `MTP/mtp-gemma-4-26B-A4B-it-Q8_0.gguf` drafter 462MB) — new MoE Gemma-4 slot,
+  `gemma4` arch (128 experts/8 active + 1 shared, 30 text layers, native ctx
+  262144), stock instruct QAT checkpoint (not abliterated, unlike the existing
+  12B slot). This exact model/repo had been referenced once before in this file
+  as a candidate but was never actually added until now.
+  - **Found and fixed a real vision bug shared with `Gemma-4-12B-it-QAT-Abliterated`**:
+    `templates\Gemma31b_fixed_chat_template.jinja` silently dropped all image
+    input. `tools/server/server-common.cpp` (`oaicompat_chat_params_parse`)
+    rewrites every `image_url` content part into `{"type": "media_marker",
+    "text": get_media_marker()}` *before* the Jinja template ever sees it — the
+    template is expected to just emit `item.text` verbatim so the server can
+    later find that marker substring in the rendered prompt and splice in the
+    real image embedding via mtmd. This template's image-handling branches only
+    matched `type in ['image', 'image_url']`, which never matches post-rewrite,
+    so images were dropped with **no error and no log line** (the base64-data-URI
+    path in `handle_media()` logs nothing either way) — the request just silently
+    proceeded text-only, burning the full image token budget on nothing. Checked
+    for a pre-fixed public template before patching: neither Google's current
+    official `gemma-4-31B-it` `chat_template.jinja` nor a community
+    llama.cpp-oriented fork (`asf0/gemma4_jinja`) handle `media_marker` either —
+    this is a generic gap in every Gemma-4 template found, not specific to this
+    fork. Fixed locally by adding an `elif part.get('type') == 'media_marker'`
+    (tool-response block) and `elif item.get('type') == 'media_marker'` (main
+    content block) case that emits `part.get('text')`/`item.get('text')`,
+    mirroring how `Qwen-Sharp-Chat-Template.jinja` handles it (there, by
+    accident, via a generic `elif 'text' in item` fallback it already had).
+    Verified fixed with a real base64 PNG request (correct "Red" answer,
+    `prompt_tokens` jumped from 29 to 78 once the image was actually embedded).
+    **This fix is retroactive** — since both Gemma-4 slots share this template
+    file, `Gemma-4-12B-it-QAT-Abliterated`'s vision (previously flagged
+    "untested" in its own note above) should now also work correctly; not
+    independently re-verified on the 12B slot itself.
+  - **Context**: `probe-ctx-headroom.ps1` live-tested full native `262144` —
+    fits with `26535/32607MiB` used, **~6.1GiB headroom**, no reduction needed.
+    Notably roomy for this repo (most presets target ~2GiB) simply because
+    total weights (main+mmproj+drafter) are only ~14.9GiB, small for a
+    262144-ctx slot.
+  - `chat-template-file` reused the existing `Gemma31b_fixed_chat_template.jinja`
+    (its header says "Google Gemma 4 Canonical Chat Template", family-wide, not
+    31B-specific) rather than adding a new file — same template family
+    confirmed via this repo's card (standard roles + `<|think|>`-token thinking
+    mode).
+  - Sampler (`temp 0.7`/`top-k 64`/`top-p 0.95`/`min-p 0.0`) and
+    `spec-draft-n-max 4`/`p-min 0.5` carried over unchanged from the 12B
+    sibling's bench-verified values, not re-benched on this MoE checkpoint.
+    No `reasoning = on` set, matching the 12B sibling's precedent, despite the
+    model having a `<|think|>`-token thinking mode — `reasoning_content`
+    populates anyway via the template's own thinking-tag handling even without
+    the flag (confirmed live), so this may be worth revisiting.
+  - **Smoke-tested clean**: plain chat (`finish_reason stop`, correct
+    reasoning/content split), tool-calling (`tools`+`tool_choice: auto`,
+    correct function/args, ~0.6s, no CPU-pegging symptom despite this being a
+    QAT release — one of the two flagged risk categories), vision (post-fix,
+    see above), MTP active (`draft_n`/`draft_n_accepted` confirmed in
+    `timings`, ~40-78% acceptance across test requests). `toolCalling` enabled
+    in `chatLanguageModels.json`.
+  - **Overthinking on self-referential counting prompts, fixed with
+    `reasoning-budget`**: on "say hello in exactly five words," the model
+    looped in `reasoning_content` re-counting candidate phrases and hit
+    `finish_reason: length` at both 100 and 600 `max_tokens` without ever
+    emitting a visible answer. Not the CPU-pegging symptom (fast, bounded,
+    just token-budget-hungry on this one prompt class) — normal factual/tool
+    prompts terminate correctly and quickly. Fixed by adding
+    `reasoning-budget = 8192` to this preset (2026-08-22), matching this
+    repo's old pre-removal convention for the closest comparable model
+    (`Qwen3.8-27B` used `8192`, the 35B MoE used `4096` — see the
+    `reasoning-budget` removal note above for the mechanism: it forces an
+    end-of-thinking tag once the token count is hit, coming out of the same
+    shared budget as everything else, not a separate pool). Re-tested at
+    `max_tokens 8500`: converged on its own at 1627 tokens
+    (`finish_reason: stop`, correct 5-word answer), well under the cap — the
+    budget is a backstop for worse cases, not something that fired on this
+    particular retest. This is currently the only preset in the repo with
+    `reasoning-budget` set again since the repo-wide removal.

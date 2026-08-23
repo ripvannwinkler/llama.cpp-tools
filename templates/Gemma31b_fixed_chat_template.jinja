@@ -309,6 +309,8 @@
                                     {{- '<|audio|>' -}}
                                 {%- elif part.get('type') == 'video' -%}
                                     {{- '<|video|>' -}}
+                                {%- elif part.get('type') == 'media_marker' -%}
+                                    {{- part.get('text') | default('') -}}
                                 {%- endif -%}
                             {%- endfor -%}
                         {%- else -%}
@@ -341,6 +343,8 @@
                         {{- '<|audio|>' -}}
                     {%- elif item.get('type') == 'video' -%}
                         {{- '<|video|>' -}}
+                    {%- elif item.get('type') == 'media_marker' -%}
+                        {{- item.get('text') | default('') -}}
                     {%- endif -%}
                 {%- endfor -%}
             {%- endif -%}
