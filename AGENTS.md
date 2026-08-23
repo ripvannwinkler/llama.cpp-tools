@@ -57,11 +57,11 @@ list itself) changes in `models.ini`, update these too:
   provider. Each entry under `provider.llama-local.models` keys by the same
   `models.ini` section name; `limit.context` = that section's `ctx-size`.
   `limit.output` is a deliberate per-tool choice, not derived (currently
-  `8192` everywhere) — leave it alone unless asked.
+  `65536` everywhere) — leave it alone unless asked.
 - `C:\Users\Chris\.pi\agent\models.json` — pi's `llama-local` provider.
   Each entry under `providers.llama-local.models[]` keys by `id` (the
   `models.ini` section name); `contextWindow` = that section's `ctx-size`.
-  `maxTokens` is likewise a deliberate choice (`8192` everywhere), not
+  `maxTokens` is likewise a deliberate choice (`65536` everywhere), not
   derived. `input` (vision) and `reasoning`/`compat.thinkingFormat` are
   **not** auto-derived by the sync skill — set by hand per model, mirroring
   whatever `chatLanguageModels.json`'s `vision` flag already says for that
