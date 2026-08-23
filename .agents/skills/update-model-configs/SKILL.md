@@ -55,6 +55,19 @@ for VS Code.
 All entries key by the **exact** `models.ini` section name (including
 spaces/parens, e.g. `Qwen3-VL-8B-Instruct (Lite, Uncensored)`).
 
+### opencode `name` field must stay short
+
+In `opencode.json`, set each model's `name` to the **same as its ID** (the
+models.ini section name) — do **not** build a long descriptive `name` like
+`Qwen3.8 27B (stock, UD-Q4_K_M, MTP, vision, reasoning: low)`. The
+model-name column in the UI (and the model picker / reasoning-effort dropdown)
+gets clipped when the name is long, and every qualifier
+(`UD-Q4_K_M`, `MTP`, `vision`, `tools`, `reasoning: …`) appended in parens
+pushes the reasoning-effort control off-screen. This is worst for big models
+like the Qwen 27B presets, whose quant/tool/vision/reasoning flags all land in
+parens. When adding an entry, default `name` to the bare ID; only a human should
+ever decide to widen it.
+
 ## Procedure
 
 1. Parse `models.ini`: build a map of `{ section-name → ctx-size }` (apply the
