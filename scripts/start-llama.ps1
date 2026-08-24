@@ -4,14 +4,7 @@ param(
     [int]$Port = 8080,
     [int]$MaxModels = 1,          # keep 1: only one model in VRAM at a time (32 GB is tight)
     [int]$Ctx = 0,                # 0 = use per-model ctx-size from models.ini; >0 overrides ALL models
-    [string]$LogFile = 'D:\llama.cpp\server.err.log',
-    [switch]$WaitForHealth,
-    [ValidateRange(1, 3600)]
-    [int]$HealthTimeoutSec = 10,
-    [ValidateRange(1, 30)]
-    [int]$HealthRequestTimeoutSec = 2,
-    [ValidateRange(50, 10000)]
-    [int]$HealthPollMs = 700
+    [string]$LogFile = 'D:\llama.cpp\server.err.log'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -183,23 +176,6 @@ catch {
 
 "llama-server launch requested: PID=$serverPid, URL=http://127.0.0.1:$Port/v1, models-max=$MaxModels"
 
-# Starting is non-blocking by default so shell callers do not wait on a
-# long-lived descendant. Use -WaitForHealth when readiness is required.
-if (-not $WaitForHealth) { return }
-
-$deadline = [DateTime]::UtcNow.AddSeconds($HealthTimeoutSec)
-while ([DateTime]::UtcNow -lt $deadline) {
-    try {
-        Invoke-RestMethod "http://127.0.0.1:$Port/health" -TimeoutSec $HealthRequestTimeoutSec | Out-Null
-        "llama-server healthy: http://127.0.0.1:$Port/v1"
-        $models = Invoke-RestMethod "http://127.0.0.1:$Port/v1/models"
-        foreach ($model in $models.data) { "  - $($model.id)" }
-        return
-    }
-    catch {
-        if ([DateTime]::UtcNow -ge $deadline) { break }
-        Start-Sleep -Milliseconds $HealthPollMs
-    }
-}
-
-throw "Server did not become healthy within $HealthTimeoutSec seconds; check D:\llama.cpp\server.err.log"
+# Starting is non-blocking: shell callers do not wait on a long-lived descendant.
+# Callers that need readiness (load.ps1, probe-ctx-headroom.ps1) poll /health
+# themselves at their own cadence rather than this script blocking for them.
