@@ -42,6 +42,74 @@ authoritative `Content-Length` (`curl -sIL <url>`) regardless of which method
 downloaded it — don't trust a clean exit code alone, a dropped connection can
 leave a silently truncated file.
 
+## Speculative decoding — `ngram-mod` beats embedded MTP here
+
+Measured 2026-08-25 on the RTX 5090 (32 GiB), `--parallel 3`, temp 0, medians of
+3 reps over three workloads: **copy** (echo a ~30-line class back with one
+rename), **agentic** (echo it back with two methods added), **novel** (400 words
+of new prose). Values are tok/s.
+
+| model | spec-type | copy | agentic | novel |
+|---|---|---:|---:|---:|
+| KAT-Coder-V2.5-Dev (35B-A3B MoE) | `none` | 236.7 | 238.2 | 236.6 |
+| | `draft-mtp` | 182.0 | 173.8 | 124.9 |
+| | `ngram-mod` | **470.1** | **438.6** | **240.6** |
+| Qwen3.6-35B-A3B (MoE) | `none` | 194.2 | 194.8 | 195.1 |
+| | `draft-mtp` | 203.1 | 187.5 | 127.7 |
+| | `ngram-mod` | **235.4** | **232.6** | **196.3** |
+| Qwen3.8-27B (dense) | `none` | 75.9 | 75.9 | 76.0 |
+| | `draft-mtp` | 112.8 | 90.6 | 71.0 |
+| | `ngram-mod` | **183.7** | **108.2** | **76.3** |
+
+- **`draft-mtp` is a net loss on the A3B MoEs** — up to 47% slower than no
+  speculation at all, *despite* 92–95% draft acceptance. High acceptance is not
+  evidence the head pays for itself: with only ~3B active params a decode step is
+  so cheap that the grafted MTP head's fixed cost dominates. Don't tune
+  `spec-draft-p-min`/`n-max` chasing acceptance — measure tok/s against `none`.
+- On the **dense** 27B the economics flip and `draft-mtp` does win standalone
+  (+49% copy), but `ngram-mod` alone still beats it on every workload, and
+  `draft-mtp,ngram-mod` is worse than `ngram-mod` alone everywhere.
+- `ngram-mod` is never worse than no speculation (it ties baseline on novel
+  prose) and roughly doubles copy-heavy/editing throughput. It's the default for
+  any preset with an **embedded** MTP head:
+
+  ```ini
+  spec-type              = ngram-mod
+  spec-ngram-mod-n-min   = 8
+  spec-ngram-mod-n-max   = 24
+  spec-ngram-mod-n-match = 48
+  ```
+
+- Gains scale with how much of the output already appears in the input, so a
+  reasoning-heavy preset (e.g. the 27B at `reasoning_effort: xhigh`) lands nearer
+  the agentic column than the copy column.
+
+Not covered by these runs: both Gemma presets and Muse-Glimmer use an **external**
+drafter (`spec-draft-model`, `spec-type = draft-mtp`/`draft-dflash`) — a different
+mechanism that was never measured, so leave them alone unless you benchmark them.
+`Ornith-1.5-35B-A3B` was switched to `ngram-mod` by inference from the other two
+A3B MoEs, not measured directly.
+
+Note `llama-bench` (and so `scripts\bench.ps1`) ignores all `spec-*` settings —
+speculative decoding can only be benchmarked through the server, using the
+`timings` object returned on each `/v1/chat/completions` response
+(`predicted_per_second`, `draft_n`, `draft_n_accepted`).
+
+## Context sizing — verify the probe under load
+
+`scripts\probe-ctx-headroom.ps1` launches its own server with `--parallel 2` and
+samples VRAM on an **idle** model, but `start-llama.ps1` runs the router with
+`--parallel 3` and compute buffers grow during generation. The probe therefore
+over-reports free VRAM by roughly 380 MiB. Pad the target (`-HeadroomMiB 2450` to
+land near 2048 in practice) and re-check `nvidia-smi` during a real generation
+before treating a context as final.
+
+Re-probe after any change that frees VRAM: dropping `draft-mtp` unloads the MTP
+head and returned ~1.5 GiB on KAT-Coder, taking it from `131072` to `212992`.
+
+`Qwen3.8-27B-NVFP4-MTP-VERY-HIGH` is a deliberate exception — leave its
+`ctx-size` at `131072` even though more would fit.
+
 ## Related tools — update whenever model params change
 
 Several external configs outside this repo duplicate each model's id and
