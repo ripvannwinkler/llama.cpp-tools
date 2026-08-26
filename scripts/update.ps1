@@ -1,15 +1,14 @@
-# update.ps1 — update upstream llama.cpp, merge it into feat/custom, and build feat/custom.
+# update.ps1 — update upstream llama.cpp and build it.
 # The upstream repository calls its mainline branch "master". The script fast-forwards
-# that branch, merges it into the custom branch, then stops/rebuilds/restarts the server.
+# that branch, then stops/rebuilds/restarts the server.
 #
-#   .\scripts\update.ps1              # update, merge, rebuild, restart server if it was up
-#   .\scripts\update.ps1 -NoRestart   # update + merge + rebuild but leave the server stopped
+#   .\scripts\update.ps1              # update, rebuild, restart server if it was up
+#   .\scripts\update.ps1 -NoRestart   # update + rebuild but leave the server stopped
 param([switch]$NoRestart)
 
 $ErrorActionPreference = 'Stop'
 $src            = 'D:\llama.cpp\src'
 $mainBranch     = 'master'
-$customBranch   = 'feat/custom'
 $server         = "$src\build\bin\llama-server.exe"
 $vcvars         = 'C:\Program Files\Microsoft Visual Studio\18\Community\VC\Auxiliary\Build\vcvars64.bat'
 if (-not (Test-Path $vcvars)) { Write-Host "vcvars64.bat not found at $vcvars" -ForegroundColor Red; return }
@@ -37,22 +36,11 @@ git -C $src switch $mainBranch
 if ($LASTEXITCODE -ne 0) { Write-Host "Failed to switch to $mainBranch." -ForegroundColor Red; return }
 git -C $src pull --ff-only origin $mainBranch
 if ($LASTEXITCODE -ne 0) {
-    Write-Host "Failed to fast-forward $mainBranch; custom branch was not merged or built." -ForegroundColor Red
-    git -C $src switch $customBranch | Out-Null
+    Write-Host "Failed to fast-forward $mainBranch; build not started." -ForegroundColor Red
     return
 }
 
-# 3. merge updated mainline into the custom branch
-Write-Host "Merging $mainBranch into $customBranch ..." -ForegroundColor Cyan
-git -C $src switch $customBranch
-if ($LASTEXITCODE -ne 0) { Write-Host "Failed to switch to $customBranch." -ForegroundColor Red; return }
-git -C $src merge --no-edit $mainBranch
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "Merge failed. Resolve or abort the merge in $src; server was left running." -ForegroundColor Red
-    return
-}
-
-# 4. remember if the server was running, then stop it (binary is locked while running)
+# 3. remember if the server was running, then stop it (binary is locked while running)
 $wasUp = [bool]((Get-NetTCPConnection -LocalPort 8080 -State Listen -ErrorAction SilentlyContinue).OwningProcess)
 if ($wasUp) {
     Write-Host "Stopping server (binary is locked while running)..." -ForegroundColor Cyan
@@ -69,8 +57,8 @@ if ($wasUp) {
 
 $oldVer = Get-Ver $server
 
-# 5. configure + build feat/custom inside the VS dev environment (Ninja + CUDA sm_120). Incremental.
-Write-Host "Configuring + building $customBranch (CUDA sm_120)..." -ForegroundColor Cyan
+# 4. configure + build $mainBranch inside the VS dev environment (Ninja + CUDA sm_120). Incremental.
+Write-Host "Configuring + building $mainBranch (CUDA sm_120)..." -ForegroundColor Cyan
 $sw = [System.Diagnostics.Stopwatch]::StartNew()
 $buildCmd = "cd /d `"$src`" && " +
             "cmake -B build -G Ninja -DGGML_CUDA=ON -DCMAKE_BUILD_TYPE=Release -DCMAKE_CUDA_ARCHITECTURES=120 " +
@@ -80,12 +68,12 @@ $buildCmd = "cd /d `"$src`" && " +
 $sw.Stop()
 if ($LASTEXITCODE -ne 0) { Write-Host "BUILD FAILED (exit $LASTEXITCODE). Server left stopped." -ForegroundColor Red; return }
 
-# 6. report
+# 5. report
 $newVer = Get-Ver $server
 Write-Host ("`nBuild OK in {0:n0}s" -f $sw.Elapsed.TotalSeconds) -ForegroundColor Green
 Write-Host "  old: $oldVer"
 Write-Host "  new: $newVer" -ForegroundColor Green
 
-# 7. restart if it was running
+# 6. restart if it was running
 if ($wasUp -and -not $NoRestart) { Write-Host "`nRestarting server..." -ForegroundColor Cyan; & D:\llama.cpp\scripts\start-llama.ps1 }
 elseif ($wasUp)                  { Write-Host "`nServer was running but left stopped (-NoRestart). Start with scripts\start-llama.ps1." -ForegroundColor DarkGray }
