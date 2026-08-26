@@ -126,15 +126,6 @@ list itself) changes in `models.ini`, update these too:
   `models.ini` section name; `limit.context` = that section's `ctx-size`.
   `limit.output` is a deliberate per-tool choice, not derived (currently
   `65536` everywhere) — leave it alone unless asked.
-- `C:\Users\Chris\.pi\agent\models.json` — pi's `llama-local` provider.
-  Each entry under `providers.llama-local.models[]` keys by `id` (the
-  `models.ini` section name); `contextWindow` = that section's `ctx-size`.
-  `maxTokens` is likewise a deliberate choice (`65536` everywhere), not
-  derived. `input` (vision) and `reasoning`/`compat.thinkingFormat` are
-  **not** auto-derived by the sync skill — set by hand per model, mirroring
-  whatever `chatLanguageModels.json`'s `vision` flag already says for that
-  model, and `reasoning: true` + `qwen-chat-template` only for `models.ini`
-  presets with `reasoning = on`.
 
 Entries key by the same model id used in `models.ini` (the
 `[section]` name). Adding, removing, or renaming a model in `models.ini` should

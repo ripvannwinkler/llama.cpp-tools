@@ -4,8 +4,8 @@ description: >
   Sync the external tool configs that mirror this repo's llama.cpp router model
   list after models.ini changes. Use whenever a model's ctx-size changes, or a
   model is added / removed / renamed in models.ini — it propagates the model id
-  list and context size into the VS Code chat model list and the opencode/pi
-  configs (and any other related-tool configs listed in AGENTS.md). Trigger on:
+  list and context size into the VS Code chat model list and the opencode
+  config (and any other related-tool configs listed in AGENTS.md). Trigger on:
   "update model configs", "sync the related tools", "I changed models.ini",
   "propagate ctx-size", after editing a preset's ctx-size or the [section] list.
 ---
@@ -42,15 +42,11 @@ rely solely on the list baked in below. As of this writing the targets are:
 |---|---|---|---|
 | `C:\Users\Chris\AppData\Roaming\Code\User\chatLanguageModels.json` (VS Code chat) | `[0].models[]`, keyed by `id` | `maxInputTokens` | `ctx-size − maxOutputTokens` (that entry's own output, default `8192`) |
 | `C:\Users\Chris\.config\opencode\opencode.json` | `provider.llama-local.models{}`, keyed by object key | `models[id].limit.context` | `ctx-size` (no output subtraction — opencode tracks context and output separately, unlike VS Code's combined budget) |
-| `C:\Users\Chris\.pi\agent\models.json` | `providers.llama-local.models[]`, keyed by `id` | `models[].contextWindow` | `ctx-size` |
 
-For both new targets, `vision`/`input` and `reasoning`/`compat` are **not**
-mechanically derived — flag likely values for a new/changed preset (mirror
-`chatLanguageModels.json`'s `vision` flag for opencode's implicit vision
-support and pi's `input`; set pi `reasoning`/`compat.thinkingFormat:
-"qwen-chat-template"` only when the preset has `reasoning = on`) but leave
-the final call to the user, the same way `toolCalling` is already handled
-for VS Code.
+For opencode, `vision`/`input` is **not** mechanically derived — flag the
+likely value for a new/changed preset (mirror `chatLanguageModels.json`'s
+`vision` flag) but leave the final call to the user, the same way
+`toolCalling` is already handled for VS Code.
 
 All entries key by the **exact** `models.ini` section name (including
 spaces/parens, e.g. `Qwen3-VL-8B-Instruct (Lite, Uncensored)`).
