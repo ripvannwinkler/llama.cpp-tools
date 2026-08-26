@@ -53,16 +53,38 @@ spaces/parens, e.g. `Qwen3-VL-8B-Instruct (Lite, Uncensored)`).
 
 ### opencode `name` field must stay short
 
-In `opencode.json`, set each model's `name` to the **same as its ID** (the
-models.ini section name) — do **not** build a long descriptive `name` like
-`Qwen3.8 27B (stock, UD-Q4_K_M, MTP, vision, reasoning: low)`. The
-model-name column in the UI (and the model picker / reasoning-effort dropdown)
-gets clipped when the name is long, and every qualifier
-(`UD-Q4_K_M`, `MTP`, `vision`, `tools`, `reasoning: …`) appended in parens
-pushes the reasoning-effort control off-screen. This is worst for big models
-like the Qwen 27B presets, whose quant/tool/vision/reasoning flags all land in
-parens. When adding an entry, default `name` to the bare ID; only a human should
-ever decide to widen it.
+In `opencode.json`, the object key / `id` must stay **byte-identical** to the
+`models.ini` section name (that is what the router matches on), but the `name`
+is display-only and must be **derived and shortened**:
+
+> `name` = model family + version, one space, parameter count — nothing else.
+
+Strip every trailing qualifier from the id: instruction-tune tag (`-it`),
+quant (`Q4_K_M`, `UD-Q6_K`, `NVFP4`, `MXFP4_MOE-BF16`, `BF16`), `MTP`,
+`Abliterated`/`abliterated`, `QAT`, `APEX`, quality tier (`Quality`,
+`VERY-HIGH`, `Lite`, `Uncensored`), and any parenthesised suffix. Keep the MoE
+active-parameter suffix (`-A3B`, `-A4B`) attached to the total, since it is part
+of the parameter count.
+
+Worked examples:
+
+| models.ini id | opencode `name` |
+|---|---|
+| `Qwen3.8-27B-NVFP4-MTP-VERY-HIGH` | `Qwen3.8 27B` |
+| `Gemma-4-26B-A4B-it-UD-Q6_K` | `Gemma-4 26B-A4B` |
+| `Muse-Glimmer-30B-Abliterated-Q4_K_M` | `Muse-Glimmer 30B` |
+
+**Collision rule.** If two presets would derive the same `name`, append the
+minimum distinguishing qualifier from the id (usually the quant tag) to the
+newer one, and call it out in the run report — it deliberately re-lengthens a
+name.
+
+Why: the model-name column in the opencode UI (and the model picker /
+reasoning-effort dropdown) clips long names, and every qualifier appended
+(`UD-Q4_K_M`, `MTP`, `vision`, `tools`, `reasoning: …`) pushes the
+reasoning-effort control off-screen. Never build a long descriptive `name` like
+`Qwen3.8 27B (stock, UD-Q4_K_M, MTP, vision, reasoning: low)`. Only a human
+should ever decide to widen a name beyond the rule above.
 
 ## Procedure
 
@@ -71,9 +93,11 @@ ever decide to widen it.
 2. For each target file, read it and reconcile against that map:
    - **Model list.** Every models.ini section must have exactly one entry.
      - Missing → add an entry, copying the shape of a sibling entry (same
-       `url`/provider fields, sensible `name`, `vision`/`input`/`toolCalling`
+       `url`/provider fields, `vision`/`input`/`toolCalling`
        per the model's real capabilities — check the models.ini preset for an
-       `mmproj` line to decide vision/image support).
+       `mmproj` line to decide vision/image support). For opencode's `name`,
+       apply the derivation rule in "opencode `name` field must stay short"
+       above — do not copy the id verbatim.
      - Present in the config but gone from models.ini → remove it.
      - Renamed → treat as remove-old + add-new (ids must match exactly).
    - **Context field.** Set it per the mapping table above for every entry.
