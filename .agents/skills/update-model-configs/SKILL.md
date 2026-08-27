@@ -43,10 +43,31 @@ rely solely on the list baked in below. As of this writing the targets are:
 | `C:\Users\Chris\AppData\Roaming\Code\User\chatLanguageModels.json` (VS Code chat) | `[0].models[]`, keyed by `id` | `maxInputTokens` | `ctx-size − maxOutputTokens` (that entry's own output, default `8192`) |
 | `C:\Users\Chris\.config\opencode\opencode.json` | `provider.llama-local.models{}`, keyed by object key | `models[id].limit.context` | `ctx-size` (no output subtraction — opencode tracks context and output separately, unlike VS Code's combined budget) |
 
-For opencode, `vision`/`input` is **not** mechanically derived — flag the
-likely value for a new/changed preset (mirror `chatLanguageModels.json`'s
-`vision` flag) but leave the final call to the user, the same way
-`toolCalling` is already handled for VS Code.
+### Vision: opencode gates images on `attachment`
+
+opencode follows the models.dev schema, where image support is a per-model
+boolean **`attachment`**, a sibling of `name` and `limit`:
+
+```json
+"Qwen3.8-27B-NVFP4-MTP-VERY-HIGH": {
+  "name": "Qwen3.8 27B",
+  "attachment": true,
+  "limit": { "context": 131072, "output": 65536 }
+}
+```
+
+It defaults to **false** when absent, and opencode then silently strips image
+attachments — the model receives text only and typically replies that it has no
+vision capability, which reads like a broken `mmproj` but is not. The desired
+value mirrors `chatLanguageModels.json`'s `vision`, i.e. it is true exactly when
+that section has an `mmproj` line in `models.ini`.
+
+Flag the likely value for a new/changed preset but leave the final call to the
+user, the same way `toolCalling` is already handled for VS Code. Never *remove*
+an existing `attachment` while syncing context sizes.
+
+An explicit `modalities` block is redundant once `attachment` is set — do not add
+one speculatively.
 
 All entries key by the **exact** `models.ini` section name (including
 spaces/parens, e.g. `Qwen3-VL-8B-Instruct (Lite, Uncensored)`).
