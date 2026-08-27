@@ -20,7 +20,9 @@ config, the tray app, and the external tools that mirror its model list.
   — tool-calling eval harness and its per-model result artifacts.
 - `scripts/` — `start-llama.ps1` (launches the router), `stop-llama.ps1`,
   `restart-llama.ps1`, `load.ps1`/`unload-llama.ps1` (per-model load/unload
-  via `/models/load`), `bench.ps1`, `update.ps1`, `probe-ctx.ps1`.
+  via `/models/load`), `bench.ps1` (llama-bench wrapper), `bench-spec.ps1`
+  (server-side speculative-decoding benchmarks — the only thing that can see
+  `spec-*`), `update.ps1`, `probe-ctx.ps1`.
 - `tray/LlamaTray/` — a Windows tray app (C#) that wraps the same router:
   `ServerController.cs` starts `llama-server.exe` with
   `--models-dir`/`--models-preset`/`--port`/`--host` (no per-model flags —
@@ -87,13 +89,50 @@ of new prose). Values are tok/s.
 Not covered by these runs: both Gemma presets and Muse-Glimmer use an **external**
 drafter (`spec-draft-model`, `spec-type = draft-mtp`/`draft-dflash`) — a different
 mechanism that was never measured, so leave them alone unless you benchmark them.
-`Ornith-1.5-35B-A3B` was switched to `ngram-mod` by inference from the other two
-A3B MoEs, not measured directly.
 
-Note `llama-bench` (and so `scripts\bench.ps1`) ignores all `spec-*` settings —
-speculative decoding can only be benchmarked through the server, using the
-`timings` object returned on each `/v1/chat/completions` response
-(`predicted_per_second`, `draft_n`, `draft_n_accepted`).
+### What the three `ngram-mod` keys actually mean
+
+Easy to misread — they are *not* `min < max < match` in the sense the values suggest
+(`src/common/common.h`, `src/common/speculative.cpp` `draft_one`):
+
+| key | meaning | upstream default | ours |
+|---|---|---:|---:|
+| `spec-ngram-mod-n-match` | hash-key n-gram length (`mod.get_n()`); warns below 16 | 24 | 48 |
+| `spec-ngram-mod-n-max` | cap on drafted tokens per step | 64 | 24 |
+| `spec-ngram-mod-n-min` | all-or-nothing gate — if the chain dies before this many tokens the **whole draft is discarded** | 48 | 8 |
+
+So ours drafts often and short; upstream's `--spec-default` drafts rarely and long.
+
+### Ornith-1.5 measured 2026-08-26 — keep `48/24/8`
+
+`Ornith-1.5-35B-A3B` is now measured directly, not inferred. `ngram-mod` is a large,
+repeatable win over `none` (768-token controlled runs, tok/s):
+
+| spec-type | copy | agentic | novel |
+|---|---:|---:|---:|
+| `none` | 201.6 | 196.6 | 188.8 |
+| `ngram-mod 48/24/8` | 269.6 | 343.0 | 187.6 |
+
+A sweep of `n_match` (16/24/32/48) and `n_max` (12/16/24/32/48/64) found **no setting
+that beats the current `48/24/8` by a defensible margin**. Specifics worth not
+re-deriving:
+
+- The current values also beat upstream's own `--spec-default` (`24/64/48`) by ~5%,
+  so `48/24/8` is a good operating point, not an accident. Don't "fix" it toward the
+  upstream numbers.
+- `n_max = 24` is a real local optimum — 12, 16, 32 and 64 all measured worse.
+- `n_max = 12` posted the **highest draft acceptance of the whole sweep (98.2%) while
+  being 10% slower**. Another instance of the rule above: rank on tok/s, never on
+  acceptance.
+- Candidates that looked 12% faster collapsed to 1-3% once generation length was
+  controlled for. See the confound notes in `scripts\bench-spec.ps1` before running
+  another sweep — sub-5% differences are not resolvable with that harness.
+
+Use `scripts\bench-spec.ps1` for any of this. `llama-bench` (and so
+`scripts\bench.ps1`) ignores all `spec-*` settings — speculative decoding can only be
+benchmarked through the server, using the `timings` object returned on each
+`/v1/chat/completions` response (`predicted_per_second`, `draft_n`,
+`draft_n_accepted`).
 
 ## Context sizing — verify the probe under load
 
