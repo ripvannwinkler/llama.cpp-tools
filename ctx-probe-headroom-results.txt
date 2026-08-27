@@ -1,2 +1,0 @@
-Gemma-4-31B-it-abliterated-Q5_K_M=98304 used=30097 total=32607 headroom=2510
-DONE
