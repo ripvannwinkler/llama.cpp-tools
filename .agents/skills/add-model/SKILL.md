@@ -5,7 +5,7 @@ description: >
   appropriate supported release, downloading and verifying its GGUF files into
   models/, deriving a safe models.ini preset from the closest working models,
   validating context, templates, vision, and tools where applicable, then
-  synchronizing the VS Code, opencode, and pi model configs. Use this skill
+  synchronizing the VS Code and pi model configs. Use this skill
   whenever the user asks to add, install, download, configure, or onboard a
   model into the local llama.cpp setup, even if they do not say "add-model".
   Always show the proposed source, files, hardware fit, and preset before large
@@ -245,7 +245,6 @@ After the new `models.ini` section(s) are present, follow
 - Add every new section id exactly once and remove no unrelated id.
 - Set VS Code `maxInputTokens = ctx-size - that entry's existing
   maxOutputTokens`; leave output values unchanged.
-- Set opencode `limit.context = ctx-size`; leave `limit.output` unchanged.
 - Set pi `contextWindow = ctx-size`; leave `maxTokens` unchanged.
 - Set vision/input and reasoning compatibility flags from verified capabilities,
   not guesses. In particular, Pi's Qwen thinking compatibility is only for

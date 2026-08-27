@@ -146,8 +146,9 @@ before treating a context as final.
 Re-probe after any change that frees VRAM: dropping `draft-mtp` unloads the MTP
 head and returned ~1.5 GiB on KAT-Coder, taking it from `131072` to `212992`.
 
-`Qwen3.8-27B-NVFP4-MTP-VERY-HIGH` is a deliberate exception — leave its
-`ctx-size` at `131072` even though more would fit.
+`Qwen3.8-27B-UD-Q6_K` uses q8_0 KV cache with the mmproj kept on CPU; its
+`ctx-size` is `155648`, the largest tested value that preserves the padded
+headroom target.
 
 ## Related tools — update whenever model params change
 
@@ -160,15 +161,21 @@ list itself) changes in `models.ini`, update these too:
   Code chat model list. Each entry's `maxInputTokens` should equal
   `ctx-size - maxOutputTokens` (output is `8192` by default) to match the
   corresponding `models.ini` section.
-- `C:\Users\Chris\.config\opencode\opencode.json` — opencode's `llama-local`
-  provider. Each entry under `provider.llama-local.models` keys by the same
-  `models.ini` section name; `limit.context` = that section's `ctx-size`.
-  `limit.output` is a deliberate per-tool choice, not derived (currently
-  `65536` everywhere) — leave it alone unless asked. A preset with an `mmproj`
-  also needs `"attachment": true` on its opencode entry: the field defaults to
-  false, and without it opencode silently strips image attachments, so the model
-  sees text only and reports itself as having no vision. The router, mmproj and
-  chat template are fine in that case — check this flag first.
+- `C:\Users\Chris\.pi\agent\models.json` — pi's `llama-local` provider.
+  Each entry under `providers.llama-local.models[]` keys by `id` (the
+  `models.ini` section name); `contextWindow` = that section's `ctx-size`.
+  `maxTokens` is a deliberate per-tool choice, not derived (currently `65536`
+  everywhere) — leave it alone unless asked. `apiKey` is a dummy literal
+  (`not-required`): the router runs without `--api-key`, but pi hides a model
+  from `/model` unless *some* auth is configured for its provider, so don't
+  remove it. `input` (vision) and `reasoning`/`compat.thinkingFormat` are
+  **not** auto-derived by the sync skill — set by hand per model, mirroring
+  the section's `mmproj` line and its `reasoning = on` flag.
+
+  pi also ships a **built-in** `llama.cpp` provider (`/login llama.cpp`, driven
+  by `/llama`) that auto-discovers from the router. It is deliberately unused:
+  it lists only *loaded* models and hardcodes `reasoning: false`. Don't
+  "simplify" the static `llama-local` list away in favour of it.
 
 Entries key by the same model id used in `models.ini` (the
 `[section]` name). Adding, removing, or renaming a model in `models.ini` should

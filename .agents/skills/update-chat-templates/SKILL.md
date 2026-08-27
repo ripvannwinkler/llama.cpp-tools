@@ -46,7 +46,7 @@ misreport. Compare parsed versions, not substrings.
    - Back up the local copy to `<name>.v<OLDVER>.jinja.bak` (overwrite any
      previous backup of the same version).
    - Download via `uvx hf download <repo> <file> --local-dir
-     "$env:TEMP\opencode\<slug>"`, then copy over the local file. (`uvx hf`,
+     "$env:TEMP\llama-templates\<slug>"`, then copy over the local file. (`uvx hf`,
      not bare `hf`; no global install exists.)
    - **Verify size** against the authoritative `Content-Length` from
      `curl.exe -sIL https://huggingface.co/<repo>/resolve/main/<file>` — follow

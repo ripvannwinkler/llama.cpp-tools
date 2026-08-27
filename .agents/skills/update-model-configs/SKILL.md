@@ -4,7 +4,7 @@ description: >
   Sync the external tool configs that mirror this repo's llama.cpp router model
   list after models.ini changes. Use whenever a model's ctx-size changes, or a
   model is added / removed / renamed in models.ini — it propagates the model id
-  list and context size into the VS Code chat model list and the opencode
+  list and context size into the VS Code chat model list and the pi
   config (and any other related-tool configs listed in AGENTS.md). Trigger on:
   "update model configs", "sync the related tools", "I changed models.ini",
   "propagate ctx-size", after editing a preset's ctx-size or the [section] list.
@@ -41,40 +41,39 @@ rely solely on the list baked in below. As of this writing the targets are:
 | Config file | Model list path | Context field | Value = |
 |---|---|---|---|
 | `C:\Users\Chris\AppData\Roaming\Code\User\chatLanguageModels.json` (VS Code chat) | `[0].models[]`, keyed by `id` | `maxInputTokens` | `ctx-size − maxOutputTokens` (that entry's own output, default `8192`) |
-| `C:\Users\Chris\.config\opencode\opencode.json` | `provider.llama-local.models{}`, keyed by object key | `models[id].limit.context` | `ctx-size` (no output subtraction — opencode tracks context and output separately, unlike VS Code's combined budget) |
+| `C:\Users\Chris\.pi\agent\models.json` (pi) | `providers.llama-local.models[]`, keyed by `id` | `contextWindow` | `ctx-size` (no output subtraction — pi tracks `contextWindow` and `maxTokens` separately, unlike VS Code's combined budget) |
 
-### Vision: opencode gates images on `attachment`
+### pi: `input` and `reasoning` are hand-set, not derived
 
-opencode follows the models.dev schema, where image support is a per-model
-boolean **`attachment`**, a sibling of `name` and `limit`:
+pi's static `llama-local` entries carry two capability fields the sync step must
+never write blind:
 
-```json
-"Qwen3.8-27B-NVFP4-MTP-VERY-HIGH": {
-  "name": "Qwen3.8 27B",
-  "attachment": true,
-  "limit": { "context": 131072, "output": 65536 }
-}
-```
-
-It defaults to **false** when absent, and opencode then silently strips image
-attachments — the model receives text only and typically replies that it has no
-vision capability, which reads like a broken `mmproj` but is not. The desired
-value mirrors `chatLanguageModels.json`'s `vision`, i.e. it is true exactly when
-that section has an `mmproj` line in `models.ini`.
+- `input`: `["text", "image"]` when that `models.ini` section has an `mmproj`
+  line, `["text"]` otherwise. This should agree with
+  `chatLanguageModels.json`'s `vision` flag and with the router's own
+  `architecture.input_modalities` from `/v1/models`; if the three ever
+  disagree, stop and report it rather than picking one.
+- `reasoning`: mirrors the section's `reasoning = on` flag. Add
+  `compat: { "thinkingFormat": "qwen-chat-template" }` only for presets on a
+  Qwen-Sharp chat template — llama.cpp reads
+  `chat_template_kwargs.enable_thinking`, not `reasoning_effort`, which the
+  `llamacpp` skill warns is silently ignored. For other template families
+  (Gemma, Muse-Glimmer) set `reasoning: true` with **no** `thinkingFormat`
+  until the right one is verified.
 
 Flag the likely value for a new/changed preset but leave the final call to the
 user, the same way `toolCalling` is already handled for VS Code. Never *remove*
-an existing `attachment` while syncing context sizes.
+an existing `input`, `reasoning`, or `compat` while syncing context sizes.
 
-An explicit `modalities` block is redundant once `attachment` is set — do not add
-one speculatively.
+Do not touch `apiKey` (`not-required`), `baseUrl`, or `api` — see AGENTS.md
+for why the dummy key must stay.
 
 All entries key by the **exact** `models.ini` section name (including
 spaces/parens, e.g. `Qwen3-VL-8B-Instruct (Lite, Uncensored)`).
 
-### opencode `name` field must stay short
+### pi `name` field must stay short
 
-In `opencode.json`, the object key / `id` must stay **byte-identical** to the
+In `models.json`, each entry's `id` must stay **byte-identical** to the
 `models.ini` section name (that is what the router matches on), but the `name`
 is display-only and must be **derived and shortened**:
 
@@ -89,7 +88,7 @@ of the parameter count.
 
 Worked examples:
 
-| models.ini id | opencode `name` |
+| models.ini id | pi `name` |
 |---|---|
 | `Qwen3.8-27B-NVFP4-MTP-VERY-HIGH` | `Qwen3.8 27B` |
 | `Gemma-4-26B-A4B-it-UD-Q6_K` | `Gemma-4 26B-A4B` |
@@ -100,7 +99,7 @@ minimum distinguishing qualifier from the id (usually the quant tag) to the
 newer one, and call it out in the run report — it deliberately re-lengthens a
 name.
 
-Why: the model-name column in the opencode UI (and the model picker /
+Why: the model-name column in the pi UI (and the model picker /
 reasoning-effort dropdown) clips long names, and every qualifier appended
 (`UD-Q4_K_M`, `MTP`, `vision`, `tools`, `reasoning: …`) pushes the
 reasoning-effort control off-screen. Never build a long descriptive `name` like
@@ -116,8 +115,8 @@ should ever decide to widen a name beyond the rule above.
      - Missing → add an entry, copying the shape of a sibling entry (same
        `url`/provider fields, `vision`/`input`/`toolCalling`
        per the model's real capabilities — check the models.ini preset for an
-       `mmproj` line to decide vision/image support). For opencode's `name`,
-       apply the derivation rule in "opencode `name` field must stay short"
+       `mmproj` line to decide vision/image support). For pi's `name`,
+       apply the derivation rule in "pi `name` field must stay short"
        above — do not copy the id verbatim.
      - Present in the config but gone from models.ini → remove it.
      - Renamed → treat as remove-old + add-new (ids must match exactly).
