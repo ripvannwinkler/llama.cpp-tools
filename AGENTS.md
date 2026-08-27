@@ -59,18 +59,12 @@ of new prose). Values are tok/s.
 | Qwen3.6-35B-A3B (MoE) | `none` | 194.2 | 194.8 | 195.1 |
 | | `draft-mtp` | 203.1 | 187.5 | 127.7 |
 | | `ngram-mod` | **235.4** | **232.6** | **196.3** |
-| Qwen3.8-27B (dense) | `none` | 75.9 | 75.9 | 76.0 |
-| | `draft-mtp` | 112.8 | 90.6 | 71.0 |
-| | `ngram-mod` | **183.7** | **108.2** | **76.3** |
 
 - **`draft-mtp` is a net loss on the A3B MoEs** — up to 47% slower than no
   speculation at all, *despite* 92–95% draft acceptance. High acceptance is not
   evidence the head pays for itself: with only ~3B active params a decode step is
   so cheap that the grafted MTP head's fixed cost dominates. Don't tune
   `spec-draft-p-min`/`n-max` chasing acceptance — measure tok/s against `none`.
-- On the **dense** 27B the economics flip and `draft-mtp` does win standalone
-  (+49% copy), but `ngram-mod` alone still beats it on every workload, and
-  `draft-mtp,ngram-mod` is worse than `ngram-mod` alone everywhere.
 - `ngram-mod` is never worse than no speculation (it ties baseline on novel
   prose) and roughly doubles copy-heavy/editing throughput. It's the default for
   any preset with an **embedded** MTP head:
@@ -83,8 +77,7 @@ of new prose). Values are tok/s.
   ```
 
 - Gains scale with how much of the output already appears in the input, so a
-  reasoning-heavy preset (e.g. the 27B at `reasoning_effort: xhigh`) lands nearer
-  the agentic column than the copy column.
+  reasoning-heavy preset lands nearer the agentic column than the copy column.
 
 Not covered by these runs: both Gemma presets and Muse-Glimmer use an **external**
 drafter (`spec-draft-model`, `spec-type = draft-mtp`/`draft-dflash`) — a different
@@ -145,10 +138,6 @@ before treating a context as final.
 
 Re-probe after any change that frees VRAM: dropping `draft-mtp` unloads the MTP
 head and returned ~1.5 GiB on KAT-Coder, taking it from `131072` to `212992`.
-
-`Qwen3.8-27B-UD-Q6_K` uses q8_0 KV cache with the mmproj kept on CPU; its
-`ctx-size` is `155648`, the largest tested value that preserves the padded
-headroom target.
 
 ## Related tools — update whenever model params change
 
