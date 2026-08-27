@@ -52,7 +52,7 @@ rename), **agentic** (echo it back with two methods added), **novel** (400 words
 of new prose). Values are tok/s.
 
 | model | spec-type | copy | agentic | novel |
-|---|---|---:|---:|---:|
+| --- | --- | ---: | ---: | ---: |
 | KAT-Coder-V2.5-Dev (35B-A3B MoE) | `none` | 236.7 | 238.2 | 236.6 |
 | | `draft-mtp` | 182.0 | 173.8 | 124.9 |
 | | `ngram-mod` | **470.1** | **438.6** | **240.6** |
@@ -96,7 +96,7 @@ Easy to misread — they are *not* `min < max < match` in the sense the values s
 (`src/common/common.h`, `src/common/speculative.cpp` `draft_one`):
 
 | key | meaning | upstream default | ours |
-|---|---|---:|---:|
+| --- | --- | ---: | ---: |
 | `spec-ngram-mod-n-match` | hash-key n-gram length (`mod.get_n()`); warns below 16 | 24 | 48 |
 | `spec-ngram-mod-n-max` | cap on drafted tokens per step | 64 | 24 |
 | `spec-ngram-mod-n-min` | all-or-nothing gate — if the chain dies before this many tokens the **whole draft is discarded** | 48 | 8 |
@@ -109,7 +109,7 @@ So ours drafts often and short; upstream's `--spec-default` drafts rarely and lo
 repeatable win over `none` (768-token controlled runs, tok/s):
 
 | spec-type | copy | agentic | novel |
-|---|---:|---:|---:|
+| --- | ---: | ---: | ---: |
 | `none` | 201.6 | 196.6 | 188.8 |
 | `ngram-mod 48/24/8` | 269.6 | 343.0 | 187.6 |
 
@@ -185,4 +185,3 @@ KV cache quant (`cache-type-k`/`cache-type-v`) is router-internal and does
 **not** need mirroring here on its own — these configs only track `ctx-size`
 and the model list. Only touch them for a KV-quant-only change if it also
 changes the max `ctx-size` that fits in VRAM.
-

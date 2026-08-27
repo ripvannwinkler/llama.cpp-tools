@@ -60,7 +60,7 @@ function Test-Candidate($target, [int]$ctx) {
     $stdout = Join-Path $tmp 'server.out.log'
     $stderr = Join-Path $tmp 'server.err.log'
     Remove-Item $stdout, $stderr -ErrorAction SilentlyContinue
-    $args = @('--models-dir', $models, '--models-max', '1', '--parallel', '2',
+    $args = @('--models-dir', $models, '--models-max', '1', '--parallel', '1',
               '--kv-unified', '--port', $Port, '--host', '127.0.0.1',
               '--models-preset', $tempPreset)
     $process = Start-Process -FilePath $bin -ArgumentList $args -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru

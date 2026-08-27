@@ -233,8 +233,8 @@ foreach ($config in $Configs) {
     $stderr = Join-Path $tmp 'server.err.log'
     Remove-Item $stdout, $stderr -ErrorAction SilentlyContinue
 
-    # --parallel 3 matches scripts\start-llama.ps1 (NOT probe-ctx-headroom.ps1's 2).
-    $serverArgs = @('--models-dir', $models, '--models-max', '1', '--parallel', '3',
+    # --parallel 1 matches scripts\start-llama.ps1 and the tray launcher.
+    $serverArgs = @('--models-dir', $models, '--models-max', '1', '--parallel', '1',
                     '--kv-unified', '--port', $Port, '--host', '127.0.0.1',
                     '--models-preset', $tempPreset)
     $process = Start-Process -FilePath $bin -ArgumentList $serverArgs `
