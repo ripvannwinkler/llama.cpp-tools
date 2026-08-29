@@ -14,15 +14,25 @@ config, the tray app, and the external tools that mirror its model list.
 - `models/` — one folder per model (gguf + optional mmproj), auto-scanned by
   the router using `--models-dir`.
 - `templates/` — custom chat templates referenced by `chat-template-file`
-  in `models.ini` (`Qwen3-Fixed-Chat-Template.jinja`,
+  in `models.ini` (`Qwen-Sharp-Chat-Template.jinja`,
   `Gemma31b_fixed_chat_template.jinja`, plus older ones).
 - `llama_tool_eval_all_models_v2.py` + `results__*.csv`/`results__*.json`
   — tool-calling eval harness and its per-model result artifacts.
-- `scripts/` — `start-llama.ps1` (launches the router), `stop-llama.ps1`,
-  `restart-llama.ps1`, `load.ps1`/`unload-llama.ps1` (per-model load/unload
-  via `/models/load`), `bench.ps1` (llama-bench wrapper), `bench-spec.ps1`
-  (server-side speculative-decoding benchmarks — the only thing that can see
-  `spec-*`), `update.ps1`, `probe-ctx.ps1`.
+- `scripts/`:
+  - `start-llama.ps1` / `stop-llama.ps1` / `restart-llama.ps1` — launch, stop,
+    and restart the router. Neither launcher passes per-model flags or
+    `--parallel`; everything per-model comes from `models.ini`.
+  - `load.ps1` / `unload-llama.ps1` — load/unload a specific model via
+    `/models/load`.
+  - `bench.ps1` — `llama-bench` wrapper (ignores all `spec-*` settings).
+  - `bench-spec.ps1` / `bench-dflash2.ps1` — server-side speculative-decoding
+    benchmarks, the only ones that see `spec-*`; measure tok/s from the
+    `timings` object on `/v1/chat/completions` responses.
+  - `probe-ctx-headroom.ps1` — finds the largest `ctx-size` that leaves a
+    requested VRAM headroom using a temporary router preset (includes each
+    model's mmproj, drafter, and KV types); `probe-ctx.ps1` — simpler probe
+    that does not represent the complete preset.
+  - `update.ps1` — rebuild/update the vendored `llama.cpp` checkout in `src/`.
 - `tray/LlamaTray/` — a Windows tray app (C#) that wraps the same router:
   `ServerController.cs` starts `llama-server.exe` with
   `--models-dir`/`--models-preset`/`--port`/`--host` (no per-model flags —
@@ -44,102 +54,16 @@ authoritative `Content-Length` (`curl -sIL <url>`) regardless of which method
 downloaded it — don't trust a clean exit code alone, a dropped connection can
 leave a silently truncated file.
 
-## Speculative decoding — `ngram-mod` beats embedded MTP here
+## Context sizing
 
-Measured 2026-08-25 on the RTX 5090 (32 GiB), `--parallel 3`, temp 0, medians of
-3 reps over three workloads: **copy** (echo a ~30-line class back with one
-rename), **agentic** (echo it back with two methods added), **novel** (400 words
-of new prose). Values are tok/s.
-
-| model | spec-type | copy | agentic | novel |
-| --- | --- | ---: | ---: | ---: |
-| KAT-Coder-V2.5-Dev (35B-A3B MoE) | `none` | 236.7 | 238.2 | 236.6 |
-| | `draft-mtp` | 182.0 | 173.8 | 124.9 |
-| | `ngram-mod` | **470.1** | **438.6** | **240.6** |
-| Qwen3.6-35B-A3B (MoE) | `none` | 194.2 | 194.8 | 195.1 |
-| | `draft-mtp` | 203.1 | 187.5 | 127.7 |
-| | `ngram-mod` | **235.4** | **232.6** | **196.3** |
-
-- **`draft-mtp` is a net loss on the A3B MoEs** — up to 47% slower than no
-  speculation at all, *despite* 92–95% draft acceptance. High acceptance is not
-  evidence the head pays for itself: with only ~3B active params a decode step is
-  so cheap that the grafted MTP head's fixed cost dominates. Don't tune
-  `spec-draft-p-min`/`n-max` chasing acceptance — measure tok/s against `none`.
-- `ngram-mod` is never worse than no speculation (it ties baseline on novel
-  prose) and roughly doubles copy-heavy/editing throughput. It's the default for
-  any preset with an **embedded** MTP head:
-
-  ```ini
-  spec-type              = ngram-mod
-  spec-ngram-mod-n-min   = 8
-  spec-ngram-mod-n-max   = 24
-  spec-ngram-mod-n-match = 48
-  ```
-
-- Gains scale with how much of the output already appears in the input, so a
-  reasoning-heavy preset lands nearer the agentic column than the copy column.
-
-Not covered by these runs: both Gemma presets and Muse-Glimmer use an **external**
-drafter (`spec-draft-model`, `spec-type = draft-mtp`/`draft-dflash`) — a different
-mechanism that was never measured, so leave them alone unless you benchmark them.
-
-### What the three `ngram-mod` keys actually mean
-
-Easy to misread — they are *not* `min < max < match` in the sense the values suggest
-(`src/common/common.h`, `src/common/speculative.cpp` `draft_one`):
-
-| key | meaning | upstream default | ours |
-| --- | --- | ---: | ---: |
-| `spec-ngram-mod-n-match` | hash-key n-gram length (`mod.get_n()`); warns below 16 | 24 | 48 |
-| `spec-ngram-mod-n-max` | cap on drafted tokens per step | 64 | 24 |
-| `spec-ngram-mod-n-min` | all-or-nothing gate — if the chain dies before this many tokens the **whole draft is discarded** | 48 | 8 |
-
-So ours drafts often and short; upstream's `--spec-default` drafts rarely and long.
-
-### Ornith-1.5 measured 2026-08-26 — keep `48/24/8`
-
-`Ornith-1.5-35B-A3B` is now measured directly, not inferred. `ngram-mod` is a large,
-repeatable win over `none` (768-token controlled runs, tok/s):
-
-| spec-type | copy | agentic | novel |
-| --- | ---: | ---: | ---: |
-| `none` | 201.6 | 196.6 | 188.8 |
-| `ngram-mod 48/24/8` | 269.6 | 343.0 | 187.6 |
-
-A sweep of `n_match` (16/24/32/48) and `n_max` (12/16/24/32/48/64) found **no setting
-that beats the current `48/24/8` by a defensible margin**. Specifics worth not
-re-deriving:
-
-- The current values also beat upstream's own `--spec-default` (`24/64/48`) by ~5%,
-  so `48/24/8` is a good operating point, not an accident. Don't "fix" it toward the
-  upstream numbers.
-- `n_max = 24` is a real local optimum — 12, 16, 32 and 64 all measured worse.
-- `n_max = 12` posted the **highest draft acceptance of the whole sweep (98.2%) while
-  being 10% slower**. Another instance of the rule above: rank on tok/s, never on
-  acceptance.
-- Candidates that looked 12% faster collapsed to 1-3% once generation length was
-  controlled for. See the confound notes in `scripts\bench-spec.ps1` before running
-  another sweep — sub-5% differences are not resolvable with that harness.
-
-Use `scripts\bench-spec.ps1` for any of this. `llama-bench` (and so
-`scripts\bench.ps1`) ignores all `spec-*` settings — speculative decoding can only be
-benchmarked through the server, using the `timings` object returned on each
-`/v1/chat/completions` response (`predicted_per_second`, `draft_n`,
-`draft_n_accepted`).
-
-## Context sizing — verify the probe under load
-
-`scripts\probe-ctx-headroom.ps1` launches its own server with `--parallel 1` and
-samples VRAM on an **idle** model. The router also runs at `parallel = 1`
-(`models.ini [*]`; neither `start-llama.ps1` nor the tray launcher pass
-`--parallel`, so the model ini is the single source) — same concurrency as the
-probe, but compute buffers still grow during generation, so the idle probe
-over-reports free VRAM by a few hundred MiB. Pad the target (`-HeadroomMiB 2450`
-to land near 2048 in practice) and re-check `nvidia-smi` during a real
-generation before treating a context as final.
-
-Re-probe after any change that frees VRAM: dropping `draft-mtp` unloads the MTP
-head and returned ~1.5 GiB on KAT-Coder, taking it from `131072` to `212992`.
+`scripts\probe-ctx-headroom.ps1` launches its own server and samples **idle**
+VRAM to find the largest `ctx-size` that leaves a requested headroom, using a
+temporary preset so each candidate includes the model's mmproj, speculative
+drafter, KV types, and other per-model settings. Compute buffers grow during
+generation, so an idle probe over-reports free VRAM; pad the headroom target
+and re-check `nvidia-smi` during a real generation before treating a context
+as final. Re-probe after any change that frees or consumes VRAM (weight size,
+KV quant, speculative head, mmproj).
 
 ## Related tools — update whenever model params change
 
