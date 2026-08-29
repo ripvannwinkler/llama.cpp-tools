@@ -130,8 +130,8 @@ benchmarked through the server, using the `timings` object returned on each
 ## Context sizing — verify the probe under load
 
 `scripts\probe-ctx-headroom.ps1` launches its own server with `--parallel 2` and
-samples VRAM on an **idle** model, but `start-llama.ps1` runs the router with
-`--parallel 3` and compute buffers grow during generation. The probe therefore
+samples VRAM on an **idle** model. The router (via `start-llama.ps1` / tray) also
+runs `--parallel 2`, but compute buffers grow during generation, so the idle probe
 over-reports free VRAM by roughly 380 MiB. Pad the target (`-HeadroomMiB 2450` to
 land near 2048 in practice) and re-check `nvidia-smi` during a real generation
 before treating a context as final.
