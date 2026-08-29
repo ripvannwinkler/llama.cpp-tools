@@ -129,12 +129,14 @@ benchmarked through the server, using the `timings` object returned on each
 
 ## Context sizing — verify the probe under load
 
-`scripts\probe-ctx-headroom.ps1` launches its own server with `--parallel 2` and
-samples VRAM on an **idle** model. The router (via `start-llama.ps1` / tray) also
-runs `--parallel 2`, but compute buffers grow during generation, so the idle probe
-over-reports free VRAM by roughly 380 MiB. Pad the target (`-HeadroomMiB 2450` to
-land near 2048 in practice) and re-check `nvidia-smi` during a real generation
-before treating a context as final.
+`scripts\probe-ctx-headroom.ps1` launches its own server with `--parallel 1` and
+samples VRAM on an **idle** model. The router also runs at `parallel = 1`
+(`models.ini [*]`; neither `start-llama.ps1` nor the tray launcher pass
+`--parallel`, so the model ini is the single source) — same concurrency as the
+probe, but compute buffers still grow during generation, so the idle probe
+over-reports free VRAM by a few hundred MiB. Pad the target (`-HeadroomMiB 2450`
+to land near 2048 in practice) and re-check `nvidia-smi` during a real
+generation before treating a context as final.
 
 Re-probe after any change that frees VRAM: dropping `draft-mtp` unloads the MTP
 head and returned ~1.5 GiB on KAT-Coder, taking it from `131072` to `212992`.

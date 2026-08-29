@@ -4,6 +4,7 @@
 param(
     [int]$Port = 8091,
     [int]$HeadroomMiB = 2048,
+    [int]$BudgetSeconds = 150,
     [int[]]$Candidates = @(8192,16384,24576,32768,40960,49152,57344,65536,73728,81920,90112,98304,106496,114688,122880,131072,139264,147456,155648,163840,172032,180224,188416,196608,204800,212992,221184,229376,237568,245760,253952,262144),
     [string]$ModelFilter
 )
@@ -44,6 +45,26 @@ function Stop-ProbeServer($process) {
     Start-Sleep -Milliseconds 800
 }
 
+# A candidate that crashes (e.g. CUDA OOM) can leave a stray child still holding
+# the probe port, which would make the next Start-Process bind-fail and the whole
+# binary search stall. Sweep the port owner before every start.
+function Clear-ProbePort([int]$Port) {
+    $owners = (Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue).OwningProcess | Select-Object -Unique
+    foreach ($p in $owners) { & taskkill /PID $p /T /F 2>$null | Out-Null }
+    Start-Sleep -Milliseconds 500
+}
+
+# Surface the actual killer from the logs instead of a bare 'failed', so an OOM
+# crash is distinguishable from a config error.
+function Get-CrashHint([string]$log) {
+    if (-not (Test-Path $log)) { return 'no log' }
+    $hit = @(Get-Content $log -Tail 60 -ErrorAction SilentlyContinue |
+        Where-Object { $_ -match 'out of memory|oom|cu[\s\._-]*error|failed to allocate|alloc.*fail|abort|assert' } |
+        Select-Object -Last 2)
+    if ($hit.Count) { return ($hit -join ' | ').Trim() }
+    return 'no error line in log'
+}
+
 function Test-Candidate($target, [int]$ctx) {
     $sectionText = $target.Section.Value
     $sectionText = [regex]::Replace(
@@ -63,34 +84,58 @@ function Test-Candidate($target, [int]$ctx) {
     $args = @('--models-dir', $models, '--models-max', '1', '--parallel', '1',
               '--kv-unified', '--port', $Port, '--host', '127.0.0.1',
               '--models-preset', $tempPreset)
+    Clear-ProbePort $Port
     $process = Start-Process -FilePath $bin -ArgumentList $args -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
     try {
         $base = "http://127.0.0.1:$Port"
         $healthy = $false
         for ($i = 0; $i -lt 120; $i++) {
-            try { Invoke-RestMethod "$base/health" -TimeoutSec 2 | Out-Null; $healthy = $true; break } catch { Start-Sleep -Milliseconds 500 }
+            try { Invoke-RestMethod "$base/health" -TimeoutSec 2 | Out-Null; $healthy = $true; break } catch {
+                # OOM during startup/load can kill the server mid-flight; polling a
+                # dead endpoint wastes minutes per candidate. Bail as soon as it's gone.
+                if ($process.HasExited) {
+                    return [pscustomobject]@{ Fits = $false; Used = 0; Total = 0; Reason = 'server crashed at startup: ' + (Get-CrashHint $stderr) }
+                }
+                if ($sw.Elapsed.TotalSeconds -ge $BudgetSeconds) {
+                    return [pscustomobject]@{ Fits = $false; Used = 0; Total = 0; Reason = 'timed out waiting for startup (server wedged?)' }
+                }
+                Start-Sleep -Milliseconds 500
+            }
         }
         if (-not $healthy) { return [pscustomobject]@{ Fits = $false; Used = 0; Total = 0; Reason = 'router failed to start' } }
 
         $loadBody = @{ model = $target.Id } | ConvertTo-Json -Compress
         try {
-            Invoke-RestMethod "$base/models/load" -Method Post -ContentType 'application/json' -Body $loadBody -TimeoutSec 300 | Out-Null
+            Invoke-RestMethod "$base/models/load" -Method Post -ContentType 'application/json' -Body $loadBody -TimeoutSec $BudgetSeconds | Out-Null
         } catch {
             $message = $_.ErrorDetails.Message
             if ($message -notmatch 'already running') {
-                return [pscustomobject]@{ Fits = $false; Used = 0; Total = 0; Reason = 'model load failed' }
+                $reason = if ($process.HasExited) { 'server crashed during load (OOM?): ' + (Get-CrashHint $stderr) } else { 'model load failed or timed out (OOM/wedge)' }
+                return [pscustomobject]@{ Fits = $false; Used = 0; Total = 0; Reason = $reason }
             }
         }
 
         $encoded = [uri]::EscapeDataString($target.Id)
         $ready = $false
         for ($i = 0; $i -lt 600; $i++) {
+            if ($sw.Elapsed.TotalSeconds -ge $BudgetSeconds) { break }
             try {
                 $props = Invoke-RestMethod "$base/props?model=$encoded" -TimeoutSec 5
                 if ($props.default_generation_settings.n_ctx) { $ready = $true; break }
-            } catch { Start-Sleep -Milliseconds 500 }
+            } catch {
+                # Connection refused after a healthy start usually means the load
+                # OOM'd and the server died. Don't retry a corpse for 5 minutes.
+                if ($process.HasExited) {
+                    return [pscustomobject]@{ Fits = $false; Used = 0; Total = 0; Reason = 'server crashed during load (OOM?): ' + (Get-CrashHint $stderr) }
+                }
+                Start-Sleep -Milliseconds 500
+            }
         }
-        if (-not $ready) { return [pscustomobject]@{ Fits = $false; Used = 0; Total = 0; Reason = 'model failed to become ready' } }
+        if (-not $ready) {
+            $reason = if ($process.HasExited) { 'server crashed during load (OOM?): ' + (Get-CrashHint $stderr) } else { 'model not ready within budget (wedged or OOM)' }
+            return [pscustomobject]@{ Fits = $false; Used = 0; Total = 0; Reason = $reason }
+        }
 
         Start-Sleep -Seconds 2
         $gpu = ((& nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader,nounits) | Select-Object -First 1).Trim().Split(',')

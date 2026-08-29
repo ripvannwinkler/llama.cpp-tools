@@ -167,7 +167,6 @@ internal sealed class ServerController
         {
             "--models-dir", ServerConfig.Current.ModelsDir,
             "--models-max", ServerConfig.Current.MaxModels.ToString(),
-            "--parallel", "2",
             "--kv-unified",
             "--port", ServerConfig.Current.Port.ToString(),
             "--host", "127.0.0.1",
