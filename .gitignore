@@ -1,6 +1,8 @@
 # Excluded folders
 src/
 models/
+drafters/
+mmproj-disabled/
 
 # Runtime logs
 *.log
