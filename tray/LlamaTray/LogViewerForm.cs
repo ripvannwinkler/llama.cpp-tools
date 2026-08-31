@@ -17,6 +17,7 @@ internal sealed class LogViewerForm : Form
     {
         _logFile = logFile;
         Text = $"LlamaTray Log — {Path.GetFileName(logFile)}";
+        Icon = IconFactory.GetBaseIcon();
         StartPosition = FormStartPosition.CenterScreen;
         ClientSize = new Size(1000, 650);
         MinimumSize = new Size(500, 250);
@@ -102,13 +103,34 @@ internal sealed class LogViewerForm : Form
         }
     }
 
+    private bool IsScrolledToBottom()
+    {
+        if (_logText.TextLength == 0) return true;
+
+        var lastCharPosition = _logText.GetPositionFromCharIndex(_logText.TextLength - 1);
+        return lastCharPosition.Y + _logText.Font.Height <= _logText.ClientSize.Height;
+    }
+
     private void SetText(string text)
     {
         if (_logText.Text == text)
             return;
 
+        var followTail = IsScrolledToBottom();
+        var anchor = followTail
+            ? 0
+            : _logText.GetCharIndexFromPosition(new Point(0, 0));
+
         _logText.Text = text;
-        _logText.SelectionStart = _logText.TextLength;
-        _logText.ScrollToCaret();
+        if (followTail)
+        {
+            _logText.SelectionStart = _logText.TextLength;
+            _logText.ScrollToCaret();
+        }
+        else
+        {
+            _logText.SelectionStart = Math.Min(anchor, _logText.TextLength);
+            _logText.ScrollToCaret();
+        }
     }
 }

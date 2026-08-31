@@ -19,6 +19,7 @@ internal static class IconFactory
     public const int TotalAnimationFrames = 8;
 
     private static readonly Image BaseLlama;
+    private static Icon? BaseIcon;
 
     static IconFactory()
     {
@@ -43,6 +44,15 @@ internal static class IconFactory
         var icon = Render(color);
         Cache[state] = icon;
         return icon;
+    }
+
+    /// <summary>Returns the plain llama icon without a state ring or animation overlay.</summary>
+    public static Icon GetBaseIcon()
+    {
+        if (BaseIcon is not null) return BaseIcon;
+
+        BaseIcon = RenderBase();
+        return BaseIcon;
     }
 
     /// <summary>
@@ -74,6 +84,30 @@ internal static class IconFactory
         var icon = RenderAnimated(color, frameIndex, totalFrames);
         lock (FrameCacheLock) _frameCache[cacheKey] = icon;
         return icon;
+    }
+
+    private static Icon RenderBase()
+    {
+        const int size = 32;
+        using var bmp = new Bitmap(size, size);
+        using (var g = Graphics.FromImage(bmp))
+        {
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            g.Clear(Color.Transparent);
+
+            if (BaseLlama != null)
+            {
+                g.DrawImage(BaseLlama, 0, 0, size, size);
+            }
+            else
+            {
+                using var brush = new SolidBrush(Color.Gray);
+                g.FillEllipse(brush, new Rectangle(2, 2, size - 4, size - 4));
+            }
+        }
+
+        var hIcon = bmp.GetHicon();
+        return Icon.FromHandle(hIcon);
     }
 
     private static Icon Render(Color color)
