@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace LlamaTray;
 
@@ -9,8 +10,11 @@ internal sealed class AppConfig
     public string ServerExe { get; set; } = @"D:\llama.cpp\src\build\bin\llama-server.exe";
     public string ModelsDir { get; set; } = @"D:\llama.cpp\models";
     public string PresetIni { get; set; } = @"D:\llama.cpp\models.ini";
-    public string StdOutLog { get; set; } = @"D:\llama.cpp\server.out.log";
-    public string StdErrLog { get; set; } = @"D:\llama.cpp\server.err.log";
+    public string LogFile { get; set; } = @"D:\llama.cpp\server.err.log";
+    [JsonPropertyName("StdOutLog")]
+    public string LegacyStdOutLog { get; set; } = @"D:\llama.cpp\server.out.log";
+    [JsonPropertyName("StdErrLog")]
+    public string LegacyStdErrLog { get; set; } = @"D:\llama.cpp\server.err.log";
     public int MaxModels { get; set; } = 1;
     public int AutoUnloadMinutes { get; set; } = 15;
 
@@ -48,6 +52,13 @@ internal static class ServerConfig
                 return baseCfg;
 
             var defaults = new AppConfig();
+            var logFile = baseCfg.LogFile;
+            if (!string.Equals(layer.LogFile, defaults.LogFile, StringComparison.OrdinalIgnoreCase))
+                logFile = layer.LogFile;
+            else if (!string.Equals(layer.LegacyStdErrLog, defaults.LegacyStdErrLog, StringComparison.OrdinalIgnoreCase))
+                logFile = layer.LegacyStdErrLog;
+            else if (!string.Equals(layer.LegacyStdOutLog, defaults.LegacyStdOutLog, StringComparison.OrdinalIgnoreCase))
+                logFile = layer.LegacyStdOutLog;
             return new AppConfig
             {
                 Port = layer.Port != defaults.Port ? layer.Port : baseCfg.Port,
@@ -55,8 +66,7 @@ internal static class ServerConfig
                 ServerExe = layer.ServerExe != defaults.ServerExe ? layer.ServerExe : baseCfg.ServerExe,
                 ModelsDir = layer.ModelsDir != defaults.ModelsDir ? layer.ModelsDir : baseCfg.ModelsDir,
                 PresetIni = layer.PresetIni != defaults.PresetIni ? layer.PresetIni : baseCfg.PresetIni,
-                StdOutLog = layer.StdOutLog != defaults.StdOutLog ? layer.StdOutLog : baseCfg.StdOutLog,
-                StdErrLog = layer.StdErrLog != defaults.StdErrLog ? layer.StdErrLog : baseCfg.StdErrLog,
+                LogFile = logFile,
                 MaxModels = layer.MaxModels != defaults.MaxModels ? layer.MaxModels : baseCfg.MaxModels,
                 AutoUnloadMinutes = layer.AutoUnloadMinutes != defaults.AutoUnloadMinutes
                     ? layer.AutoUnloadMinutes
@@ -82,10 +92,8 @@ internal static class ServerConfig
             overrides["ModelsDir"] = config.ModelsDir;
         if (config.PresetIni != defaults.PresetIni)
             overrides["PresetIni"] = config.PresetIni;
-        if (config.StdOutLog != defaults.StdOutLog)
-            overrides["StdOutLog"] = config.StdOutLog;
-        if (config.StdErrLog != defaults.StdErrLog)
-            overrides["StdErrLog"] = config.StdErrLog;
+        if (config.LogFile != defaults.LogFile)
+            overrides["LogFile"] = config.LogFile;
         if (config.MaxModels != defaults.MaxModels)
             overrides["MaxModels"] = config.MaxModels;
         if (config.AutoUnloadMinutes != defaults.AutoUnloadMinutes)

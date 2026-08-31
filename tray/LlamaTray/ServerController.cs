@@ -27,8 +27,8 @@ internal sealed class ServerController
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(10) };
 
     private Process? _serverProcess;
-    private StreamWriter? _stdOutWriter;
-    private StreamWriter? _stdErrWriter;
+    private StreamWriter? _logWriter;
+    private readonly object _logLock = new();
 
     public bool IsPortListening()
     {
@@ -187,19 +187,12 @@ internal sealed class ServerController
         };
         foreach (var a in args) psi.ArgumentList.Add(a);
 
-        _stdOutWriter = new StreamWriter(ServerConfig.Current.StdOutLog, append: false, Encoding.UTF8) { AutoFlush = true };
-        _stdErrWriter = new StreamWriter(ServerConfig.Current.StdErrLog, append: false, Encoding.UTF8) { AutoFlush = true };
+        _logWriter = new StreamWriter(ServerConfig.Current.LogFile, append: false, Encoding.UTF8) { AutoFlush = true };
 
         var proc = new Process { StartInfo = psi, EnableRaisingEvents = true };
-        proc.OutputDataReceived += (_, e) => { if (e.Data != null) _stdOutWriter?.WriteLine(e.Data); };
-        proc.ErrorDataReceived += (_, e) => { if (e.Data != null) _stdErrWriter?.WriteLine(e.Data); };
-        proc.Exited += (_, _) =>
-        {
-            _stdOutWriter?.Dispose();
-            _stdErrWriter?.Dispose();
-            _stdOutWriter = null;
-            _stdErrWriter = null;
-        };
+        proc.OutputDataReceived += (_, e) => WriteLogLine(e.Data);
+        proc.ErrorDataReceived += (_, e) => WriteLogLine(e.Data);
+        proc.Exited += (_, _) => CloseLogWriter();
 
         try
         {
@@ -210,6 +203,7 @@ internal sealed class ServerController
         }
         catch (Exception ex)
         {
+            CloseLogWriter();
             return (false, $"Failed to launch llama-server.exe: {ex.Message}");
         }
 
@@ -219,7 +213,7 @@ internal sealed class ServerController
             await Task.Delay(700);
         }
 
-        return (false, "Server did not become healthy in time; check server.err.log.");
+        return (false, $"Server did not become healthy in time; check {ServerConfig.Current.LogFile}.");
     }
 
     public async Task<(bool ok, string message)> StopAsync()
@@ -287,7 +281,7 @@ internal sealed class ServerController
             await Task.Delay(500);
         }
 
-        return (false, $"Load requested but '{modelId}' not confirmed loaded after 60s — check server.err.log.");
+        return (false, $"Load requested but '{modelId}' not confirmed loaded after 60s — check {ServerConfig.Current.LogFile}.");
     }
 
     public async Task<bool> UnloadModelAsync(string modelId)
@@ -323,6 +317,24 @@ internal sealed class ServerController
 
         await Task.Delay(500);
         return (true, unloaded.Count > 0 ? $"Unloaded: {string.Join(", ", unloaded)}" : "Nothing was loaded.");
+    }
+
+    private void WriteLogLine(string? line)
+    {
+        if (line == null) return;
+        lock (_logLock)
+        {
+            _logWriter?.WriteLine(line);
+        }
+    }
+
+    private void CloseLogWriter()
+    {
+        lock (_logLock)
+        {
+            _logWriter?.Dispose();
+            _logWriter = null;
+        }
     }
 
     private static void KillTree(int pid)

@@ -17,6 +17,8 @@ internal sealed class TrayAppContext : ApplicationContext
     private readonly ToolStripMenuItem _loadModelItem;
     private readonly ToolStripMenuItem _unloadAllItem;
     private readonly ToolStripMenuItem _settingsItem;
+    private readonly ToolStripMenuItem _logViewerItem;
+    private LogViewerForm? _logViewer;
 
     private bool _busy;
     private bool _stopRequested;
@@ -85,6 +87,12 @@ internal sealed class TrayAppContext : ApplicationContext
                 )
         );
 
+        _logViewerItem = new ToolStripMenuItem(
+            "View Log",
+            null,
+            (_, _) => ShowLogViewer()
+        );
+
         var exitItem = new ToolStripMenuItem(
             "Exit",
             null,
@@ -126,6 +134,7 @@ internal sealed class TrayAppContext : ApplicationContext
         menu.Items.Add(_unloadAllItem);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(openWebUiItem);
+        menu.Items.Add(_logViewerItem);
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(_settingsItem);
         menu.Items.Add(new ToolStripSeparator());
@@ -653,6 +662,21 @@ internal sealed class TrayAppContext : ApplicationContext
         return IconFactory.GetAnimatedFrame(state, _animFrame, IconFactory.TotalAnimationFrames);
     }
 
+    private void ShowLogViewer()
+    {
+        if (_logViewer is { IsDisposed: false })
+        {
+            if (_logViewer.WindowState == FormWindowState.Minimized)
+                _logViewer.WindowState = FormWindowState.Normal;
+            _logViewer.Activate();
+            return;
+        }
+
+        _logViewer = new LogViewerForm(ServerConfig.Current.LogFile);
+        _logViewer.FormClosed += (_, _) => _logViewer = null;
+        _logViewer.Show();
+    }
+
     private async void ShowSettingsDialogAsync()
     {
         if (_busy)
@@ -666,6 +690,8 @@ internal sealed class TrayAppContext : ApplicationContext
             return;
 
         var after = dialog.SavedConfig;
+        if (!string.Equals(after.LogFile, before.LogFile, StringComparison.OrdinalIgnoreCase))
+            _logViewer?.Close();
 
         bool needsRestart =
             after.Port != before.Port
@@ -673,8 +699,7 @@ internal sealed class TrayAppContext : ApplicationContext
             || after.ModelsDir != before.ModelsDir
             || after.PresetIni != before.PresetIni
             || after.MaxModels != before.MaxModels
-            || after.StdOutLog != before.StdOutLog
-            || after.StdErrLog != before.StdErrLog;
+            || after.LogFile != before.LogFile;
 
         if (needsRestart)
         {
@@ -710,6 +735,8 @@ internal sealed class TrayAppContext : ApplicationContext
         _animTimer.Dispose();
         _popupHideTimer.Stop();
         _popupHideTimer.Dispose();
+        _logViewer?.Close();
+
         _statusPopup.Hide();
         _statusPopup.Dispose();
         _notifyIcon.Visible = false;

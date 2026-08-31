@@ -8,8 +8,7 @@ internal sealed class SettingsForm : Form
     private TextBox _serverExe;
     private TextBox _modelsDir;
     private TextBox _presetIni;
-    private TextBox _stdOutLog;
-    private TextBox _stdErrLog;
+    private TextBox _logFile;
     private NumericUpDown _maxModels;
     private NumericUpDown _autoUnloadMinutes;
 
@@ -83,16 +82,12 @@ internal sealed class SettingsForm : Form
         AddRowWithBrowse(table, 3, "Preset Ini:", browseIsFolder: false,
             new TextBox { Dock = DockStyle.Fill, Text = initial.PresetIni }, out _presetIni);
 
-        // Row 4: StdOut Log
-        AddRow(table, 4, "StdOut Log:",
-            new TextBox { Dock = DockStyle.Fill, Text = initial.StdOutLog }, out _stdOutLog);
+        // Row 4: Combined log file
+        AddRow(table, 4, "Log File:",
+            new TextBox { Dock = DockStyle.Fill, Text = initial.LogFile }, out _logFile);
 
-        // Row 5: StdErr Log
-        AddRow(table, 5, "StdErr Log:",
-            new TextBox { Dock = DockStyle.Fill, Text = initial.StdErrLog }, out _stdErrLog);
-
-        // Row 6: Max Models
-        AddRow(table, 6, "Max Models:", new NumericUpDown
+        // Row 5: Max Models
+        AddRow(table, 5, "Max Models:", new NumericUpDown
         {
             Minimum = 1,
             Maximum = 99,
@@ -100,8 +95,8 @@ internal sealed class SettingsForm : Form
             Dock = DockStyle.Fill,
         }, out _maxModels);
 
-        // Row 7: AutoUnload
-        AddRow(table, 7, "AutoUnload (min, 0=off):", new NumericUpDown
+        // Row 6: AutoUnload
+        AddRow(table, 6, "AutoUnload (min, 0=off):", new NumericUpDown
         {
             Minimum = 0,
             Maximum = 99999,
@@ -238,8 +233,7 @@ internal sealed class SettingsForm : Form
             ServerExe = _serverExe.Text,
             ModelsDir = _modelsDir.Text,
             PresetIni = _presetIni.Text,
-            StdOutLog = _stdOutLog.Text,
-            StdErrLog = _stdErrLog.Text,
+            LogFile = _logFile.Text,
             MaxModels = (int)_maxModels.Value,
             AutoUnloadMinutes = (int)_autoUnloadMinutes.Value,
         };

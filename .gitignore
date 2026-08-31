@@ -1,6 +1,7 @@
 # Excluded folders
 src/
 models/
+mmproj/
 drafters/
 mmproj-disabled/
 
