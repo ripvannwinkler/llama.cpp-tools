@@ -7,3 +7,6 @@ mmproj-disabled/
 
 # Runtime logs
 *.log
+
+# pi agent internal state (observational memory, session journals)
+.pi/
