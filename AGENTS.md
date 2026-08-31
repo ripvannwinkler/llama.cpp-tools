@@ -11,14 +11,17 @@ is upstream's contributor policy, not relevant here). Detailed reference:
   (`--models-preset`). Section name = model id = folder under `models/`.
   Precedence: CLI args > `[model-id]` > `[*]`.
 - `models/` (one folder per model), `templates/` (chat templates referenced
-  by `chat-template-file`), `llama_tool_eval_all_models_v2.py` (tool-calling
-  eval harness).
+  by `chat-template-file`), `drafters/` (speculative draft models loaded via
+  `spec-draft-model`), `mmproj/` (loose vision projectors). The router only
+  auto-scans `models/`, so the drafter and projector files live outside it
+  and are reached by absolute path from `models.ini`.
 - `scripts/` — `start/stop/restart-llama.ps1`, `load.ps1`, `bench.ps1`,
   `bench-spec.ps1`/`bench-dflash2.ps1`, `probe-ctx*.ps1`, `update.ps1`.
   See the reference doc for what each does.
 - `tray/LlamaTray/` — C# tray app wrapping the same router (starts
   `llama-server.exe` with no per-model flags; those come from `models.ini`).
-  Logs: `server.out.log` / `server.err.log` in this directory.
+  Log: one file, whatever `LogFile` resolves to (`server.log` at the repo
+  root right now). See the reference doc for the override chain.
 
 ## Rules
 

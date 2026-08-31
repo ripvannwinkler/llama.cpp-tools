@@ -12,8 +12,16 @@ Details for the personal setup documented in the root [AGENTS.md](../AGENTS.md).
 - `templates/` — custom chat templates referenced by `chat-template-file`
   in `models.ini` (`Qwen-Sharp-Chat-Template.jinja`,
   `Gemma31b_fixed_chat_template.jinja`, plus older ones).
-- `llama_tool_eval_all_models_v2.py` + `results__*.csv`/`results__*.json`
-  — tool-calling eval harness and its per-model result artifacts.
+- `drafters/` — speculative draft models (currently `Qwen3.8-27B-DFlash2`),
+  loaded through `spec-draft-model` in `models.ini`. Kept out of `models/`,
+  which the router auto-scans into servable presets.
+- `mmproj/` — vision projectors not attached to a model folder (currently
+  `mmproj-BF16-qwen38_27b.gguf`, whose `mmproj` line in `models.ini` is
+  commented out). Also outside `models/`; note some projectors do live inside
+  their model folder, so check both places when a preset's `mmproj` is edited.
+- `merge/` — one-off `download_and_merge.py` plus its own pip-tools venv
+  (`requirements.in` / `requirements.txt`), used to merge an upstream HF repo
+  ahead of GGUF conversion. Not part of the running server.
 - `scripts/`:
   - `start-llama.ps1` / `stop-llama.ps1` / `restart-llama.ps1` — launch, stop,
     and restart the router. Neither launcher passes per-model flags or
@@ -24,6 +32,9 @@ Details for the personal setup documented in the root [AGENTS.md](../AGENTS.md).
   - `bench-spec.ps1` / `bench-dflash2.ps1` — server-side speculative-decoding
     benchmarks, the only ones that see `spec-*`; measure tok/s from the
     `timings` object on `/v1/chat/completions` responses.
+  - `bench-27b-probe.ps1` — quick decode probe against the running router
+    (`-Name` fuzzy-matches a model, `-Runs`/`-MaxTokens`); prints per-run
+    tok/s, draft acceptance, and tokens per main step.
   - `probe-ctx-headroom.ps1` — finds the largest `ctx-size` that leaves a
     requested VRAM headroom using a temporary router preset (includes each
     model's mmproj, drafter, and KV types); `probe-ctx.ps1` — simpler probe
@@ -34,8 +45,21 @@ Details for the personal setup documented in the root [AGENTS.md](../AGENTS.md).
   `--models-dir`/`--models-preset`/`--port`/`--host` (no per-model flags —
   those all come from `models.ini`), and polls `/health` and `/models` to
   confirm start/load.
-- `server.out.log` / `server.err.log` — router stdout/stderr, next to the
-  root AGENTS.md (paths configured in `tray/LlamaTray/appsettings.json`).
+- Log file: there is one, not a stdout/stderr pair. `start-llama.ps1` /
+  `restart-llama.ps1` pass llama.cpp's `--log-file` (default
+  `D:\llama.cpp\server.err.log`). The tray app resolves `LogFile` in
+  `tray/LlamaTray/appsettings.json`, then layers
+  `tray/LlamaTray/publish/appsettings.local.json` over it, and that local
+  override currently points at `D:\llama.cpp\server.log` — so the live log is
+  `server.log`, and `server.err.log` holds the previous script-launched run.
+  `server.out.log` is dead: `ServerConfig.cs` still names it
+  `LegacyStdOutLog` and nothing writes it.
+- Router process model: the port 8080 router spawns a separate
+  `llama-server.exe` worker per loaded model on a dynamic localhost port
+  (`--models-max 1` right now, so one worker at a time), and proxies OpenAI
+  requests to it. Two `llama-server` processes in the task list is normal.
+  Log lines are prefixed with the serving port, and the leading timestamp is
+  `minutes.seconds.millis.micros` since that process started.
 
 ## Downloading models
 

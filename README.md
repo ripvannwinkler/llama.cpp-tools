@@ -35,9 +35,14 @@ D:\llama.cpp\
     bench.ps1        pick a model and benchmark it (llama-bench)
     probe-ctx.ps1    find each model's max context via llama-bench (used to build models.ini)
     update.ps1       git pull + recompile the CUDA build, then restart
+  templates\      custom chat templates pointed at by chat-template-file
+  drafters\       speculative draft models pointed at by spec-draft-model
+                  (both outside models\, which the router auto-scans)
   tray\           Windows tray app (GUI equivalent of the scripts above)
   README.md       this file
-  server.out.log / server.err.log   runtime logs
+  server.log      runtime log - single file, path comes from LogFile
+                  (server.err.log = previous script-launched run; the old
+                  server.out.log is no longer written)
 ```
 
 ## Hardware / toolchain (as built)
