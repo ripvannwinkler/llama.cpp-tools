@@ -92,7 +92,8 @@ internal static class IconFactory
 
             if (BaseLlama != null)
             {
-                using var rec = GetRecolored(color);
+                // Cached — do not dispose; it is reused for every render of this color.
+                var rec = GetRecolored(color);
                 g.DrawImage(rec, 0, 0, size, size);
             }
             else
@@ -116,8 +117,21 @@ internal static class IconFactory
             }
         }
 
-        return Icon.FromHandle(bmp.GetHicon());
+        // Clone so the caller owns the icon data (a form disposes its Icon); the raw
+        // HICON from GetHicon must be destroyed explicitly.
+        var hIcon = bmp.GetHicon();
+        try
+        {
+            return (Icon)Icon.FromHandle(hIcon).Clone();
+        }
+        finally
+        {
+            DestroyIcon(hIcon);
+        }
     }
+
+    [DllImport("user32.dll")]
+    private static extern bool DestroyIcon(IntPtr hIcon);
 
     /// <summary>
     /// Returns a cached copy of the logo with its orange element hue-shifted to

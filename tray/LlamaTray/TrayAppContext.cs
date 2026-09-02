@@ -484,7 +484,7 @@ internal sealed class TrayAppContext : ApplicationContext
             return;
         }
 
-        _logViewer = new LogViewerForm(ServerConfig.Current.LogFile);
+        _logViewer = new LogViewerForm(ServerConfig.Current.LogFile, _controller);
         _logViewer.FormClosed += (_, _) => _logViewer = null;
         _logViewer.Show();
     }
