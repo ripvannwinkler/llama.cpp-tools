@@ -1,6 +1,6 @@
 # update.ps1 — update upstream llama.cpp and build it.
-# The upstream repository calls its mainline branch "master". The script fast-forwards
-# that branch, then stops/rebuilds/restarts the server.
+# Keep the local customization branch rebased on upstream master so the
+# custom patch survives source updates.
 #
 #   .\scripts\update.ps1              # update, rebuild, restart server if it was up
 #   .\scripts\update.ps1 -NoRestart   # update + rebuild but leave the server stopped
@@ -8,7 +8,8 @@ param([switch]$NoRestart)
 
 $ErrorActionPreference = 'Stop'
 $src            = 'D:\llama.cpp\src'
-$mainBranch     = 'master'
+$customBranch   = 'feat/custom'
+$upstreamBranch = 'master'
 $server         = "$src\build\bin\llama-server.exe"
 $vcvars         = 'C:\Program Files\Microsoft Visual Studio\18\Community\VC\Auxiliary\Build\vcvars64.bat'
 if (-not (Test-Path $vcvars)) { Write-Host "vcvars64.bat not found at $vcvars" -ForegroundColor Red; return }
@@ -21,7 +22,7 @@ function Get-Ver($exe) {
     return 'unknown'
 }
 
-# 1. refuse to switch branches with local source changes
+# 1. refuse to rebase with local source changes
 $changes = @(git -C $src status --porcelain)
 if ($LASTEXITCODE -ne 0) { Write-Host "Unable to read git status for $src." -ForegroundColor Red; return }
 if ($changes.Count -gt 0) {
@@ -30,13 +31,18 @@ if ($changes.Count -gt 0) {
     return
 }
 
-# 2. fast-forward upstream's mainline branch
-Write-Host "Updating $mainBranch from origin/$mainBranch ..." -ForegroundColor Cyan
-git -C $src switch $mainBranch
-if ($LASTEXITCODE -ne 0) { Write-Host "Failed to switch to $mainBranch." -ForegroundColor Red; return }
-git -C $src pull --ff-only origin $mainBranch
+# 2. rebase the customization branch onto the latest upstream mainline
+Write-Host "Updating $customBranch from origin/$upstreamBranch ..." -ForegroundColor Cyan
+git -C $src switch $customBranch
+if ($LASTEXITCODE -ne 0) { Write-Host "Failed to switch to $customBranch." -ForegroundColor Red; return }
+git -C $src fetch origin $upstreamBranch
 if ($LASTEXITCODE -ne 0) {
-    Write-Host "Failed to fast-forward $mainBranch; build not started." -ForegroundColor Red
+    Write-Host "Failed to fetch origin/$upstreamBranch; build not started." -ForegroundColor Red
+    return
+}
+git -C $src rebase "origin/$upstreamBranch"
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "Failed to rebase $customBranch onto origin/$upstreamBranch; resolve the rebase manually. Build not started." -ForegroundColor Red
     return
 }
 
@@ -57,8 +63,8 @@ if ($wasUp) {
 
 $oldVer = Get-Ver $server
 
-# 4. configure + build $mainBranch inside the VS dev environment (Ninja + CUDA sm_120). Incremental.
-Write-Host "Configuring + building $mainBranch (CUDA sm_120)..." -ForegroundColor Cyan
+# 4. configure + build $customBranch inside the VS dev environment (Ninja + CUDA sm_120). Incremental.
+Write-Host "Configuring + building $customBranch (CUDA sm_120)..." -ForegroundColor Cyan
 $sw = [System.Diagnostics.Stopwatch]::StartNew()
 $buildCmd = "cd /d `"$src`" && " +
             "cmake -B build -G Ninja -DGGML_CUDA=ON -DCMAKE_BUILD_TYPE=Release -DCMAKE_CUDA_ARCHITECTURES=120 " +
