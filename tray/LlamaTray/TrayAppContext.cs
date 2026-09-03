@@ -123,7 +123,7 @@ internal sealed class TrayAppContext : ApplicationContext
 
         RebuildLoadModelMenu(ModelCatalog.ReadModelIds(), currentlyLoadedId: null);
 
-        _pollTimer = new System.Windows.Forms.Timer { Interval = 3000 };
+        _pollTimer = new System.Windows.Forms.Timer { Interval = 1000 };
         _pollTimer.Tick += async (_, _) => await RefreshStateAsync();
         _pollTimer.Start();
 
@@ -354,6 +354,28 @@ internal sealed class TrayAppContext : ApplicationContext
             _lastActivityUtc = null;
             _lastActivityModelId = null;
             _lastDecodeTotal = null;
+        }
+
+        // Detect model loading in progress (status == "loading" in /models).
+        var loadingModel = models?.FirstOrDefault(m => m.Status?.Value == "loading");
+        if (loadingModel != null && !_busy)
+        {
+            // Start the orange loading animation if not already running.
+            if (_activeOperation == Operation.None)
+            {
+                _activeOperation = Operation.Loading;
+                _animFrame = 0;
+                _animTimer.Start();
+            }
+        }
+        else if (
+            _activeOperation == Operation.Loading
+            && _apiAnimationEndUtc == null  // not a grace-window animation from transition logic
+            && !_busy                       // not a tray-initiated load/unload
+            && loadedId == null)            // model didn't load — load failed or was cancelled
+        {
+            _animTimer.Stop();
+            _activeOperation = Operation.None;
         }
 
         var animIcon = GetMaybeAnimatedIcon(state);

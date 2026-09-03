@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Windows.Forms;
 
 namespace LlamaTray;
@@ -513,6 +514,7 @@ internal sealed class LogViewerForm : Form
             var bytes = new byte[length];
             stream.ReadExactly(bytes);
             var text = Encoding.UTF8.GetString(bytes);
+            text = StripAnsiEscapes(text);
             if (start > 0)
             {
                 var firstNewline = text.IndexOf('\n');
@@ -564,6 +566,13 @@ internal sealed class LogViewerForm : Form
         }
     }
 
+    private static readonly Regex AnsiEscapeRegex = new(
+        @"\x1B\[[0-9;]*[a-zA-Z]",
+        RegexOptions.Compiled);
+
+    private static string StripAnsiEscapes(string text) =>
+        string.IsNullOrEmpty(text) ? text : AnsiEscapeRegex.Replace(text, string.Empty);
+
     /// <summary>
     /// Required method for Designer support - do not modify
     /// the contents of this method with the code editor.
@@ -571,9 +580,9 @@ internal sealed class LogViewerForm : Form
     private void InitializeComponent()
     {
         SuspendLayout();
-        // 
+        //
         // LogViewerForm
-        // 
+        //
         ClientSize = new System.Drawing.Size(876, 639);
         ResumeLayout(false);
     }

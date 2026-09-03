@@ -216,14 +216,15 @@ internal sealed class ServerController
 
         var logPath = Path.Combine(
             Path.GetTempPath(),
-            $"llama-server-tray-{DateTime.Now:yyyyMMdd-HHmmss}-{Guid.NewGuid():N[..8]}.log");
+            $"llama-server-tray-{DateTime.Now:yyyyMMdd-HHmmss}.log");
 
         // Best-effort cleanup of the previous launch's temp log.
         try { if (_logFilePath != null && File.Exists(_logFilePath)) File.Delete(_logFilePath); }
         catch { /* someone still has it open */ }
 
         _logFilePath = logPath;
-        args.AddRange(["--log-file", logPath]);
+        args.Add("--log-file");
+        args.Add(logPath);
 
         var psi = new ProcessStartInfo
         {
