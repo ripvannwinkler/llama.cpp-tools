@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Management;
 using System.Net.NetworkInformation;
 using System.Text;
@@ -216,7 +217,7 @@ internal sealed class ServerController
 
         var logPath = Path.Combine(
             Path.GetTempPath(),
-            $"llama-server-tray-{DateTime.Now:yyyyMMdd-HHmmss}.log");
+            $"llama-server-tray-{DateTimeOffset.UtcNow.ToString("yyyy-MM-ddTHH-mm-ssZ", CultureInfo.InvariantCulture)}.log");
 
         // Best-effort cleanup of the previous launch's temp log.
         try { if (_logFilePath != null && File.Exists(_logFilePath)) File.Delete(_logFilePath); }

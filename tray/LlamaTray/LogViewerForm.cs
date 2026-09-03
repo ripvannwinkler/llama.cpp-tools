@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Windows.Forms;
@@ -24,8 +25,7 @@ internal sealed class LogViewerForm : Form
     private readonly System.Windows.Forms.Timer _logTimer;
     private readonly System.Windows.Forms.Timer _statusTimer;
 
-    private long _lastLength = -1;
-    private DateTime _lastWriteTimeUtc;
+    private long _lastFilePosition = -1; // -1 = not yet opened
 
     private Dictionary<string, Dictionary<string, string>> _presets = new();
     private string? _presetsModelId; // cached presets are valid for this model id only
@@ -83,8 +83,8 @@ internal sealed class LogViewerForm : Form
             BorderStyle = BorderStyle.None,
             DetectUrls = false,
             Multiline = true,
-            ScrollBars = RichTextBoxScrollBars.Both,
-            WordWrap = false,
+            ScrollBars = RichTextBoxScrollBars.Vertical,
+            WordWrap = true,
             HideSelection = false,
         };
 
@@ -475,6 +475,17 @@ internal sealed class LogViewerForm : Form
     // Log tail
     // ------------------------------------------------------------------
 
+    [DllImport("user32.dll")]
+    private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
+    private const int WM_SETREDRAW = 0x000B;
+
+    private static readonly Regex AnsiEscapeRegex = new(
+        @"\x1B\[[0-9;]*[a-zA-Z]",
+        RegexOptions.Compiled);
+
+    private static string StripAnsiEscapes(string text) =>
+        string.IsNullOrEmpty(text) ? text : AnsiEscapeRegex.Replace(text, string.Empty);
+
     private void RefreshLog()
     {
         // Follow the controller's live log file: it changes on every server start
@@ -483,7 +494,8 @@ internal sealed class LogViewerForm : Form
         if (!string.Equals(_logFile, activeLog, StringComparison.Ordinal))
         {
             _logFile = activeLog;
-            _lastLength = -1;
+            _lastFilePosition = -1;
+            _logText.Clear();
             Text = $"LlamaTray — {Path.GetFileName(_logFile)}";
         }
 
@@ -491,14 +503,10 @@ internal sealed class LogViewerForm : Form
         {
             if (!File.Exists(_logFile))
             {
-                SetText("(waiting for log file...)");
-                _lastLength = -1;
+                if (_logText.TextLength == 0)
+                    AppendLogText("(waiting for log file...)");
                 return;
             }
-
-            var info = new FileInfo(_logFile);
-            if (info.Length == _lastLength && info.LastWriteTimeUtc == _lastWriteTimeUtc)
-                return;
 
             using var stream = new FileStream(
                 _logFile,
@@ -507,23 +515,50 @@ internal sealed class LogViewerForm : Form
                 FileShare.ReadWrite | FileShare.Delete,
                 bufferSize: 64 * 1024,
                 options: FileOptions.SequentialScan);
-            var start = Math.Max(0, stream.Length - TailBytes);
-            stream.Seek(start, SeekOrigin.Begin);
+            var fileLength = stream.Length;
 
-            var length = checked((int)(stream.Length - start));
+            // File was truncated or rotated — reset.
+            if (_lastFilePosition > fileLength)
+            {
+                _lastFilePosition = -1;
+                _logText.Clear();
+            }
+
+            if (_lastFilePosition == fileLength)
+                return; // no new content
+
+            // First open: seek to tail to avoid dumping the entire file.
+            if (_lastFilePosition < 0)
+                _lastFilePosition = Math.Max(0, fileLength - TailBytes);
+
+            stream.Seek(_lastFilePosition, SeekOrigin.Begin);
+
+            var length = checked((int)(fileLength - _lastFilePosition));
             var bytes = new byte[length];
             stream.ReadExactly(bytes);
             var text = Encoding.UTF8.GetString(bytes);
             text = StripAnsiEscapes(text);
-            if (start > 0)
+
+            // On first open, trim to the last complete line.
+            if (_lastFilePosition > 0 && _lastFilePosition == Math.Max(0, fileLength - TailBytes))
             {
                 var firstNewline = text.IndexOf('\n');
                 text = firstNewline >= 0 ? text[(firstNewline + 1)..] : string.Empty;
             }
 
-            SetText(string.IsNullOrEmpty(text) ? "(log is empty)" : text);
-            _lastLength = info.Length;
-            _lastWriteTimeUtc = info.LastWriteTimeUtc;
+            // Anchor the next read to the bytes actually consumed.
+            _lastFilePosition = stream.Position;
+
+            if (string.IsNullOrEmpty(text))
+                return;
+
+            var followTail = IsScrolledToBottom();
+            AppendLogText(text);
+            if (followTail)
+            {
+                _logText.SelectionStart = _logText.TextLength;
+                _logText.ScrollToCaret();
+            }
         }
         catch (IOException)
         {
@@ -531,47 +566,31 @@ internal sealed class LogViewerForm : Form
         }
         catch (UnauthorizedAccessException)
         {
-            SetText($"Unable to read log file:\r\n{_logFile}");
+            if (_logText.TextLength == 0)
+                AppendLogText($"Unable to read log file:\r\n{_logFile}");
         }
     }
 
     private bool IsScrolledToBottom()
     {
         if (_logText.TextLength == 0) return true;
-
         var lastCharPosition = _logText.GetPositionFromCharIndex(_logText.TextLength - 1);
         return lastCharPosition.Y + _logText.Font.Height <= _logText.ClientSize.Height;
     }
 
-    private void SetText(string text)
+    private void AppendLogText(string text)
     {
-        if (_logText.Text == text)
-            return;
-
-        var followTail = IsScrolledToBottom();
-        var anchor = followTail
-            ? 0
-            : _logText.GetCharIndexFromPosition(new Point(0, 0));
-
-        _logText.Text = text;
-        if (followTail)
+        SendMessage(_logText.Handle, WM_SETREDRAW, IntPtr.Zero, IntPtr.Zero);
+        try
         {
-            _logText.SelectionStart = _logText.TextLength;
-            _logText.ScrollToCaret();
+            _logText.AppendText(text);
         }
-        else
+        finally
         {
-            _logText.SelectionStart = Math.Min(anchor, _logText.TextLength);
-            _logText.ScrollToCaret();
+            SendMessage(_logText.Handle, WM_SETREDRAW, (IntPtr)1, IntPtr.Zero);
+            _logText.Invalidate();
         }
     }
-
-    private static readonly Regex AnsiEscapeRegex = new(
-        @"\x1B\[[0-9;]*[a-zA-Z]",
-        RegexOptions.Compiled);
-
-    private static string StripAnsiEscapes(string text) =>
-        string.IsNullOrEmpty(text) ? text : AnsiEscapeRegex.Replace(text, string.Empty);
 
     /// <summary>
     /// Required method for Designer support - do not modify
