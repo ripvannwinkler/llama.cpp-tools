@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Management;
 using System.Net.NetworkInformation;
 using System.Text;
 using System.Text.Json;
@@ -26,9 +27,45 @@ internal sealed class ServerController
 {
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(10) };
 
+    // Process we started (if any). Used to short-circuit log-file detection.
     private Process? _serverProcess;
-    private StreamWriter? _logWriter;
-    private readonly object _logLock = new();
+    private string? _logFilePath;
+
+    // Cached detection of an externally-started server's log file.
+    private int? _detectedPid;
+    private string? _detectedLogFile;
+    private DateTime _lastDetectUtc;
+
+    /// <summary>
+    /// The log file the current server is actually writing to.  When the tray started
+    /// the server this is the temp file it created; when the server was started by a
+    /// script or another tool we sniff the --log-file argument from its command line
+    /// via WMI.  Falls back to the configured LogFile if no --log-file was passed.
+    /// </summary>
+    public string ActiveLogFile
+    {
+        get
+        {
+            // Fast path: we started the server and it's still running.
+            if (_logFilePath != null)
+            {
+                try { if (_serverProcess is { HasExited: false }) return _logFilePath; }
+                catch { /* process handle invalid */ }
+            }
+
+            // Slow path: detect from the listening process (throttled to once / 3 s).
+            if (DateTime.UtcNow - _lastDetectUtc > TimeSpan.FromSeconds(3))
+            {
+                _lastDetectUtc = DateTime.UtcNow;
+                _detectedPid = GetListeningPid(ServerConfig.Current.Port);
+                _detectedLogFile = _detectedPid != null
+                    ? DetectLogFileFromProcess(_detectedPid.Value)
+                    : null;
+            }
+
+            return _detectedLogFile ?? _logFilePath ?? ServerConfig.Current.LogFile;
+        }
+    }
 
     public bool IsPortListening()
     {
@@ -177,33 +214,34 @@ internal sealed class ServerController
             args.Add(ServerConfig.Current.PresetIni);
         }
 
+        var logPath = Path.Combine(
+            Path.GetTempPath(),
+            $"llama-server-tray-{DateTime.Now:yyyyMMdd-HHmmss}-{Guid.NewGuid():N[..8]}.log");
+
+        // Best-effort cleanup of the previous launch's temp log.
+        try { if (_logFilePath != null && File.Exists(_logFilePath)) File.Delete(_logFilePath); }
+        catch { /* someone still has it open */ }
+
+        _logFilePath = logPath;
+        args.AddRange(["--log-file", logPath]);
+
         var psi = new ProcessStartInfo
         {
             FileName = ServerConfig.Current.ServerExe,
             UseShellExecute = false,
             CreateNoWindow = true,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
         };
         foreach (var a in args) psi.ArgumentList.Add(a);
 
-        _logWriter = new StreamWriter(ServerConfig.Current.LogFile, append: false, Encoding.UTF8) { AutoFlush = true };
-
-        var proc = new Process { StartInfo = psi, EnableRaisingEvents = true };
-        proc.OutputDataReceived += (_, e) => WriteLogLine(e.Data);
-        proc.ErrorDataReceived += (_, e) => WriteLogLine(e.Data);
-        proc.Exited += (_, _) => CloseLogWriter();
+        var proc = new Process { StartInfo = psi };
 
         try
         {
             proc.Start();
-            proc.BeginOutputReadLine();
-            proc.BeginErrorReadLine();
             _serverProcess = proc;
         }
         catch (Exception ex)
         {
-            CloseLogWriter();
             return (false, $"Failed to launch llama-server.exe: {ex.Message}");
         }
 
@@ -213,7 +251,7 @@ internal sealed class ServerController
             await Task.Delay(700);
         }
 
-        return (false, $"Server did not become healthy in time; check {ServerConfig.Current.LogFile}.");
+        return (false, $"Server did not become healthy in time; check {ActiveLogFile}.");
     }
 
     public async Task<(bool ok, string message)> StopAsync()
@@ -281,7 +319,7 @@ internal sealed class ServerController
             await Task.Delay(500);
         }
 
-        return (false, $"Load requested but '{modelId}' not confirmed loaded after 60s — check {ServerConfig.Current.LogFile}.");
+        return (false, $"Load requested but '{modelId}' not confirmed loaded after 60s — check {ActiveLogFile}.");
     }
 
     public async Task<bool> UnloadModelAsync(string modelId)
@@ -317,24 +355,6 @@ internal sealed class ServerController
 
         await Task.Delay(500);
         return (true, unloaded.Count > 0 ? $"Unloaded: {string.Join(", ", unloaded)}" : "Nothing was loaded.");
-    }
-
-    private void WriteLogLine(string? line)
-    {
-        if (line == null) return;
-        lock (_logLock)
-        {
-            _logWriter?.WriteLine(line);
-        }
-    }
-
-    private void CloseLogWriter()
-    {
-        lock (_logLock)
-        {
-            _logWriter?.Dispose();
-            _logWriter = null;
-        }
     }
 
     private static void KillTree(int pid)
@@ -388,5 +408,46 @@ internal sealed class ServerController
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Read the --log-file argument from a running process's command line via WMI.
+    /// </summary>
+    private static string? DetectLogFileFromProcess(int pid)
+    {
+        try
+        {
+            using var searcher = new ManagementObjectSearcher(
+                $"SELECT CommandLine FROM Win32_Process WHERE ProcessId = {pid}");
+            foreach (ManagementObject obj in searcher.Get())
+            {
+                var cmdLine = obj["CommandLine"]?.ToString();
+                if (cmdLine == null) continue;
+                return ExtractLogFileFromCommandLine(cmdLine);
+            }
+        }
+        catch
+        {
+            // WMI may be unavailable; fall through.
+        }
+        return null;
+    }
+
+    private static string? ExtractLogFileFromCommandLine(string commandLine)
+    {
+        var idx = commandLine.IndexOf("--log-file", StringComparison.OrdinalIgnoreCase);
+        if (idx < 0) return null;
+
+        var after = commandLine[(idx + "--log-file".Length)..].TrimStart();
+        if (after.Length == 0) return null;
+
+        if (after[0] == '"')
+        {
+            var end = after.IndexOf('"', 1);
+            return end > 1 ? after[1..end] : null;
+        }
+
+        var space = after.IndexOf(' ');
+        return space >= 0 ? after[..space] : after;
     }
 }

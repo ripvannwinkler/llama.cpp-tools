@@ -8,7 +8,6 @@ internal sealed class SettingsForm : Form
     private TextBox _serverExe;
     private TextBox _modelsDir;
     private TextBox _presetIni;
-    private TextBox _logFile;
     private NumericUpDown _maxModels;
     private NumericUpDown _autoUnloadMinutes;
 
@@ -17,8 +16,13 @@ internal sealed class SettingsForm : Form
 
     public AppConfig? SavedConfig => DialogResult == DialogResult.OK ? ReadConfig() : null;
 
+    // LogFile is kept in AppConfig as a fallback for servers started outside the tray,
+    // but isn't user-configurable here (the tray writes to a per-launch temp file).
+    private readonly string _initialLogFile;
+
     public SettingsForm(AppConfig initial)
     {
+        _initialLogFile = initial.LogFile;
         AutoScaleMode = AutoScaleMode.Dpi;
         Text = "LlamaTray Settings";
         ClientSize = new Size(800, 500);
@@ -36,6 +40,7 @@ internal sealed class SettingsForm : Form
         {
             Dock = DockStyle.Fill,
             ColumnCount = 3,
+            RowCount = 7,
             ColumnStyles =
             {
                 new ColumnStyle(SizeType.AutoSize),
@@ -45,7 +50,6 @@ internal sealed class SettingsForm : Form
             Padding = new Padding(10),
             RowStyles =
             {
-                new RowStyle(SizeType.AutoSize),
                 new RowStyle(SizeType.AutoSize),
                 new RowStyle(SizeType.AutoSize),
                 new RowStyle(SizeType.AutoSize),
@@ -82,12 +86,8 @@ internal sealed class SettingsForm : Form
         AddRowWithBrowse(table, 3, "Preset Ini:", browseIsFolder: false,
             new TextBox { Dock = DockStyle.Fill, Text = initial.PresetIni }, out _presetIni);
 
-        // Row 4: Combined log file
-        AddRow(table, 4, "Log File:",
-            new TextBox { Dock = DockStyle.Fill, Text = initial.LogFile }, out _logFile);
-
-        // Row 5: Max Models
-        AddRow(table, 5, "Max Models:", new NumericUpDown
+        // Row 4: Max Models
+        AddRow(table, 4, "Max Models:", new NumericUpDown
         {
             Minimum = 1,
             Maximum = 99,
@@ -95,8 +95,8 @@ internal sealed class SettingsForm : Form
             Dock = DockStyle.Fill,
         }, out _maxModels);
 
-        // Row 6: AutoUnload
-        AddRow(table, 6, "AutoUnload (min, 0=off):", new NumericUpDown
+        // Row 5: AutoUnload
+        AddRow(table, 5, "AutoUnload (min, 0=off):", new NumericUpDown
         {
             Minimum = 0,
             Maximum = 99999,
@@ -233,7 +233,7 @@ internal sealed class SettingsForm : Form
             ServerExe = _serverExe.Text,
             ModelsDir = _modelsDir.Text,
             PresetIni = _presetIni.Text,
-            LogFile = _logFile.Text,
+            LogFile = _initialLogFile,
             MaxModels = (int)_maxModels.Value,
             AutoUnloadMinutes = (int)_autoUnloadMinutes.Value,
         };

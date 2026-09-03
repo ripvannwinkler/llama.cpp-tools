@@ -14,7 +14,7 @@ internal sealed class LogViewerForm : Form
     private const int TailBytes = 512 * 1024;
 
     private readonly ServerController _controller;
-    private readonly string _logFile;
+    private string _logFile;
     private readonly RichTextBox _logText;
     private readonly Label _statusLabel;
     private readonly Panel _statusPanel;
@@ -35,13 +35,13 @@ internal sealed class LogViewerForm : Form
     // Window bounds persist in llamatray-ui.properties next to the exe.
     private const string BoundsFile = "llamatray-ui.properties";
 
-    public LogViewerForm(string logFile, ServerController controller)
+    public LogViewerForm(ServerController controller)
     {
-        _logFile = logFile;
         _controller = controller;
+        _logFile = controller.ActiveLogFile;
         _uiScale = DeviceDpi / 96.0;
 
-        Text = $"LlamaTray — {Path.GetFileName(logFile)}";
+        Text = $"LlamaTray — {Path.GetFileName(_logFile)}";
         Icon = IconFactory.GetBaseIcon();
         StartPosition = FormStartPosition.CenterScreen;
         // Scale everything explicitly (device pixels); AutoScaleMode would double-scale
@@ -476,6 +476,16 @@ internal sealed class LogViewerForm : Form
 
     private void RefreshLog()
     {
+        // Follow the controller's live log file: it changes on every server start
+        // (unique temp name per launch).
+        var activeLog = _controller.ActiveLogFile;
+        if (!string.Equals(_logFile, activeLog, StringComparison.Ordinal))
+        {
+            _logFile = activeLog;
+            _lastLength = -1;
+            Text = $"LlamaTray — {Path.GetFileName(_logFile)}";
+        }
+
         try
         {
             if (!File.Exists(_logFile))

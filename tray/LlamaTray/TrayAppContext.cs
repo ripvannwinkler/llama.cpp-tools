@@ -484,7 +484,7 @@ internal sealed class TrayAppContext : ApplicationContext
             return;
         }
 
-        _logViewer = new LogViewerForm(ServerConfig.Current.LogFile, _controller);
+        _logViewer = new LogViewerForm(_controller);
         _logViewer.FormClosed += (_, _) => _logViewer = null;
         _logViewer.Show();
     }
@@ -502,16 +502,13 @@ internal sealed class TrayAppContext : ApplicationContext
             return;
 
         var after = dialog.SavedConfig;
-        if (!string.Equals(after.LogFile, before.LogFile, StringComparison.OrdinalIgnoreCase))
-            _logViewer?.Close();
 
         bool needsRestart =
             after.Port != before.Port
             || after.ServerExe != before.ServerExe
             || after.ModelsDir != before.ModelsDir
             || after.PresetIni != before.PresetIni
-            || after.MaxModels != before.MaxModels
-            || after.LogFile != before.LogFile;
+            || after.MaxModels != before.MaxModels;
 
         if (needsRestart)
         {

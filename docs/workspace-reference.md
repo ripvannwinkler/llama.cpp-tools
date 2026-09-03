@@ -47,11 +47,15 @@ Details for the personal setup documented in the root [AGENTS.md](../AGENTS.md).
   confirm start/load.
 - Log file: there is one, not a stdout/stderr pair. `start-llama.ps1` /
   `restart-llama.ps1` pass llama.cpp's `--log-file` (default
-  `D:\llama.cpp\server.err.log`). The tray app resolves `LogFile` in
-  `tray/LlamaTray/appsettings.json`, then layers
-  `tray/LlamaTray/publish/appsettings.local.json` over it, and that local
-  override currently points at `D:\llama.cpp\server.log` — so the live log is
-  `server.log`, and `server.err.log` holds the previous script-launched run.
+  `D:\llama.cpp\server.err.log`). The tray app captures the server's
+  stdout/stderr into a unique per-launch temp file
+  (`%TEMP%\llama-server-tray-<timestamp>-<random>.log`) instead of the
+  configured `LogFile`, because truncating a file another tool has open fails;
+  `ServerController.ActiveLogFile` exposes it and the View Log dialog follows
+  it (re-pointing on each start). The configured `LogFile` (from
+  `appsettings.json` layered with `publish/appsettings.local.json`)
+  is only the fallback when the server wasn't started by the tray.
+  `server.err.log`/`server.log` hold script- and older tray-launched runs;
   `server.out.log` is dead: `ServerConfig.cs` still names it
   `LegacyStdOutLog` and nothing writes it.
 - Router process model: the port 8080 router spawns a separate
