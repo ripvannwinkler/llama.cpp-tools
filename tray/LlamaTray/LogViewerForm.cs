@@ -83,8 +83,8 @@ internal sealed class LogViewerForm : Form
             BorderStyle = BorderStyle.None,
             DetectUrls = false,
             Multiline = true,
-            ScrollBars = RichTextBoxScrollBars.Vertical,
-            WordWrap = true,
+            ScrollBars = RichTextBoxScrollBars.Both,
+            WordWrap = false,
             HideSelection = false,
         };
 
@@ -475,9 +475,39 @@ internal sealed class LogViewerForm : Form
     // Log tail
     // ------------------------------------------------------------------
 
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativePoint
+    {
+        public int X;
+        public int Y;
+    }
+
     [DllImport("user32.dll")]
     private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, ref NativePoint lParam);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct ScrollInfo
+    {
+        public uint Size;
+        public uint Mask;
+        public int Min;
+        public int Max;
+        public uint Page;
+        public int Position;
+        public int TrackPosition;
+    }
+
+    [DllImport("user32.dll")]
+    private static extern bool GetScrollInfo(IntPtr hWnd, int bar, ref ScrollInfo info);
+
     private const int WM_SETREDRAW = 0x000B;
+    private const int EM_GETSCROLLPOS = 0x04DD;
+    private const int EM_SETSCROLLPOS = 0x04DE;
+    private const int SB_VERT = 1;
+    private const uint SIF_ALL = 0x17;
 
     private static readonly Regex AnsiEscapeRegex = new(
         @"\x1B\[[0-9;]*[a-zA-Z]",
@@ -538,6 +568,7 @@ internal sealed class LogViewerForm : Form
             stream.ReadExactly(bytes);
             var text = Encoding.UTF8.GetString(bytes);
             text = StripAnsiEscapes(text);
+            text = NormalizeLineEndings(text);
 
             // On first open, trim to the last complete line.
             if (_lastFilePosition > 0 && _lastFilePosition == Math.Max(0, fileLength - TailBytes))
@@ -553,11 +584,18 @@ internal sealed class LogViewerForm : Form
                 return;
 
             var followTail = IsScrolledToBottom();
+            var scrollPosition = GetScrollPosition();
             AppendLogText(text);
             if (followTail)
             {
                 _logText.SelectionStart = _logText.TextLength;
                 _logText.ScrollToCaret();
+                // Follow new lines vertically without resetting horizontal scrolling.
+                SetScrollPosition(new NativePoint { X = scrollPosition.X, Y = GetScrollPosition().Y });
+            }
+            else
+            {
+                SetScrollPosition(scrollPosition);
             }
         }
         catch (IOException)
@@ -574,9 +612,30 @@ internal sealed class LogViewerForm : Form
     private bool IsScrolledToBottom()
     {
         if (_logText.TextLength == 0) return true;
-        var lastCharPosition = _logText.GetPositionFromCharIndex(_logText.TextLength - 1);
-        return lastCharPosition.Y + _logText.Font.Height <= _logText.ClientSize.Height;
+
+        var info = new ScrollInfo
+        {
+            Size = (uint)Marshal.SizeOf<ScrollInfo>(),
+            Mask = SIF_ALL,
+        };
+        if (!GetScrollInfo(_logText.Handle, SB_VERT, ref info))
+            return true;
+
+        return info.Position + (int)info.Page >= info.Max;
     }
+
+    private NativePoint GetScrollPosition()
+    {
+        var position = new NativePoint();
+        SendMessage(_logText.Handle, EM_GETSCROLLPOS, IntPtr.Zero, ref position);
+        return position;
+    }
+
+    private void SetScrollPosition(NativePoint position) =>
+        SendMessage(_logText.Handle, EM_SETSCROLLPOS, IntPtr.Zero, ref position);
+
+    private static string NormalizeLineEndings(string text) =>
+        text.Replace("\r\n", "\n").Replace("\r", "\n").Replace("\n", "\r\n");
 
     private void AppendLogText(string text)
     {

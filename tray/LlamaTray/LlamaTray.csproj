@@ -6,7 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <UseWindowsForms>true</UseWindowsForms>
-    <ApplicationIcon />
+    <ApplicationIcon>llama-icon.ico</ApplicationIcon>
     <AssemblyName>LlamaTray</AssemblyName>
     <RootNamespace>LlamaTray</RootNamespace>
     <PublishSingleFile>true</PublishSingleFile>
@@ -26,6 +26,9 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
     <None Update="llama-icon.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Update="llama-icon.ico">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>
