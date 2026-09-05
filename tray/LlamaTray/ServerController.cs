@@ -412,7 +412,7 @@ internal sealed class ServerController
     private const int TcpTableDwordCapacity = 1 + TcpTableRowCapacity * 7;
 
     [DllImport("iphlpapi.dll")]
-    private static extern int GetTcpTable(ref int[] table, ref int size, int order);
+    private static extern int GetTcpTable(byte[] table, ref int size, int order);
 
     /// <summary>
     /// PID of the process listening on <paramref name="port"/>, or null if none can be determined.
@@ -433,24 +433,27 @@ internal sealed class ServerController
     {
         try
         {
-            var buf = new int[TcpTableDwordCapacity];
-            var size = TcpTableDwordCapacity * 4; // bytes
+            var buf = new byte[TcpTableDwordCapacity * 4];
+            var size = buf.Length;
             // bOrder=0: the kernel's sort order is irrelevant, we scan for the port ourselves.
-            if (GetTcpTable(ref buf, ref size, 0) != 0) return null;
+            // Use a byte[] rather than ref int[]: the native API writes a packed DWORD buffer,
+            // and array marshaling with ref can corrupt the managed array reference on failure.
+            if (GetTcpTable(buf, ref size, 0) != 0) return null;
 
-            var n = buf[0]; // dwNumEntries
+            var n = BitConverter.ToInt32(buf, 0); // dwNumEntries
             if (n > TcpTableRowCapacity) n = TcpTableRowCapacity;
 
             for (var i = 0; i < n; i++)
             {
                 var rowStart = 1 + i * 7; // row i starts right after the header DWORD
-                if (buf[rowStart] != MibTcpStateListen) continue;
+                var rowOffset = rowStart * sizeof(int);
+                if (BitConverter.ToInt32(buf, rowOffset) != MibTcpStateListen) continue;
                 // dwLocalPort arrives big-endian in the low 16 bits of the DWORD.
-                var raw = buf[rowStart + 2];
+                var raw = BitConverter.ToInt32(buf, rowOffset + 2 * sizeof(int));
                 var listenPort = ((raw & 0xFF) << 8) | ((raw >> 8) & 0xFF);
                 if (listenPort == port)
                 {
-                    var pid = buf[rowStart + 6]; // dwPid
+                    var pid = BitConverter.ToInt32(buf, rowOffset + 6 * sizeof(int)); // dwPid
                     return pid > 0 ? pid : null;
                 }
             }
