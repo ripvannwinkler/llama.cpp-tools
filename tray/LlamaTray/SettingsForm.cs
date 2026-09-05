@@ -128,6 +128,7 @@ internal sealed class SettingsForm : Form
             Dock = DockStyle.Fill,
             Margin = new Padding(0, 0, 5, 0),
         };
+        Ui.StyleButton(btnOk);
         btnOk.Click += OnOk;
 
         var btnCancel = new Button
@@ -137,6 +138,7 @@ internal sealed class SettingsForm : Form
             Dock = DockStyle.Fill,
             Margin = new Padding(5, 0, 0, 0),
         };
+        Ui.StyleButton(btnCancel);
 
         btnTable.Controls.Add(btnOk, 0, 0);
         btnTable.Controls.Add(btnCancel, 1, 0);
@@ -187,6 +189,7 @@ internal sealed class SettingsForm : Form
             Dock = DockStyle.Fill,
             Margin = new Padding(2, 0, 0, 0),
         };
+        Ui.StyleButton(btn);
 
         btn.Click += (_, _) =>
         {

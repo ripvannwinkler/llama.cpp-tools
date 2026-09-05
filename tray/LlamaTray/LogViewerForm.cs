@@ -84,7 +84,7 @@ internal sealed class LogViewerForm : Form
             DetectUrls = false,
             Multiline = true,
             ScrollBars = RichTextBoxScrollBars.Both,
-            WordWrap = false,
+            WordWrap = true,
             HideSelection = false,
         };
 

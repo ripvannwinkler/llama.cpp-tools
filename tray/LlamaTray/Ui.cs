@@ -13,6 +13,8 @@ internal static class Ui
     public const int OuterMargin = 16;
     // Gap between related controls.
     public const int Spacing = 8;
+    public const int ButtonWidth = 100;
+    public const int ButtonHeight = 32;
 
     public static Font DefaultFont => new("Segoe UI", 9F);
     public static Font MonoFont => new("Consolas", 9F);
@@ -33,6 +35,7 @@ internal static class Ui
         button.FlatAppearance.BorderColor = ButtonBorder;
         button.BackColor = ButtonFace;
         button.ForeColor = Color.White;
+        button.MinimumSize = new Size(Scale(button, ButtonWidth), Scale(button, ButtonHeight));
     }
 
     public static int Scale(Control control, int value) =>
