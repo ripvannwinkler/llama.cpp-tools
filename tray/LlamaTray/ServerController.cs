@@ -249,10 +249,24 @@ internal sealed class ServerController
 
         for (var i = 0; i < 30; i++)
         {
+            if (proc.HasExited)
+            {
+                _serverProcess = null;
+                return (false, $"llama-server exited during startup (code {proc.ExitCode}); check {ActiveLogFile}.");
+            }
             if (await IsHealthyAsync()) return (true, "llama-server is up.");
             await Task.Delay(700);
         }
 
+        // Never leave a failed startup process behind. It can otherwise make the
+        // next action appear stuck or cause StartAsync to report a false conflict.
+        try
+        {
+            if (!proc.HasExited)
+                KillTree(proc.Id);
+        }
+        catch { /* process may have exited between checks */ }
+        _serverProcess = null;
         return (false, $"Server did not become healthy in time; check {ActiveLogFile}.");
     }
 
@@ -315,13 +329,25 @@ internal sealed class ServerController
 
         for (var i = 0; i < 120; i++)
         {
+            if (!IsPortListening())
+                return (false, $"Server stopped while loading '{modelId}'. Check {ActiveLogFile}.");
+
             var models = await GetModelsAsync();
             var m = models?.FirstOrDefault(x => x.Id == modelId);
-            if (m?.Status?.Value == "loaded") return (true, $"Loaded: {modelId}");
+            var status = m?.Status?.Value;
+            if (status == "loaded")
+                return (true, $"Loaded: {modelId}");
+
+            // Failed loads (notably CUDA OOM) may be reported as an error state
+            // instead of returning a failed HTTP response. Do not leave the tray
+            // action busy until the full timeout in that case.
+            if (status is "error" or "failed" or "unloaded")
+                return (false, $"Load failed for '{modelId}'. Check {ActiveLogFile}.");
+
             await Task.Delay(500);
         }
 
-        return (false, $"Load requested but '{modelId}' not confirmed loaded after 60s — check {ActiveLogFile}.");
+        return (false, $"Load requested but '{modelId}' was not confirmed loaded after 60s — check {ActiveLogFile}.");
     }
 
     public async Task<bool> UnloadModelAsync(string modelId)

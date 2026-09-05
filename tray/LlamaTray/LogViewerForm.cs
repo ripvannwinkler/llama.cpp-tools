@@ -81,12 +81,17 @@ internal sealed class LogViewerForm : Form
             Font = Ui.MonoLogFont,
             ReadOnly = true,
             BorderStyle = BorderStyle.None,
+            Padding = new Padding(Ui.Scale(this, 4)),
             DetectUrls = false,
             Multiline = true,
             ScrollBars = RichTextBoxScrollBars.Both,
             WordWrap = true,
             HideSelection = false,
         };
+        // RichTextBox.Padding is not honored by the native RichEdit control. Set
+        // its formatting rectangle after handle creation and whenever it resizes.
+        _logText.HandleCreated += (_, _) => ApplyLogTextPadding();
+        _logText.ClientSizeChanged += (_, _) => ApplyLogTextPadding();
 
         // Fills the area below the status pane; the form padding provides the frame.
         var logPanel = new Panel
@@ -482,13 +487,27 @@ internal sealed class LogViewerForm : Form
         public int Y;
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativeRect
+    {
+        public int Left;
+        public int Top;
+        public int Right;
+        public int Bottom;
+    }
+
     [DllImport("user32.dll")]
     private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
 
     [DllImport("user32.dll")]
     private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, ref NativePoint lParam);
 
+    [DllImport("user32.dll")]
+    private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, ref NativeRect lParam);
+
     private const int WM_SETREDRAW = 0x000B;
+    private const int EM_SETRECTNP = 0x00B4;
+    private const int LogTextPadding = 4;
     private const int EM_GETSCROLLPOS = 0x04DD;
     private const int EM_SETSCROLLPOS = 0x04DE;
 
@@ -607,6 +626,22 @@ internal sealed class LogViewerForm : Form
         // line.  A small tolerance absorbs the control's one-pixel border without
         // treating a whole hidden line as being at the bottom.
         return end.Y <= _logText.ClientSize.Height + 1;
+    }
+
+    private void ApplyLogTextPadding()
+    {
+        if (!_logText.IsHandleCreated)
+            return;
+
+        var padding = Ui.Scale(this, LogTextPadding);
+        var rect = new NativeRect
+        {
+            Left = padding,
+            Top = padding,
+            Right = Math.Max(padding, _logText.ClientSize.Width - padding),
+            Bottom = Math.Max(padding, _logText.ClientSize.Height - padding),
+        };
+        SendMessage(_logText.Handle, EM_SETRECTNP, IntPtr.Zero, ref rect);
     }
 
     private NativePoint GetScrollPosition()
