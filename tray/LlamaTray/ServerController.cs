@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Management;
 using System.Net.NetworkInformation;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -399,42 +400,96 @@ internal sealed class ServerController
         }
     }
 
+    /// <summary>MIB_TCP_STATE_LISTEN — the only state the tray's own server ever sits in.</summary>
+    private const int MibTcpStateListen = 2;
+
+    /// <summary>Max IPv4 TCP sessions scanned in a single GetTcpTable() snapshot. If the real table
+    /// exceeds this the sizing call signals ERROR_INSUFFICIENT_BUFFER and we fall back to the WMI
+    /// command-line match instead.</summary>
+    private const int TcpTableRowCapacity = 1024;
+
+    /// <summary>DWORD buffer for MIB_TCPTABLE: 1 header (dwNumEntries) + rows × 7 DWORD fields.</summary>
+    private const int TcpTableDwordCapacity = 1 + TcpTableRowCapacity * 7;
+
+    [DllImport("iphlpapi.dll")]
+    private static extern int GetTcpTable(ref int[] table, ref int size, int order);
+
+    /// <summary>
+    /// PID of the process listening on <paramref name="port"/>, or null if none can be determined.
+    /// Previously this shelled out to `netstat -ano`. netstat.exe child processes were left
+    /// un-reaped (the 5 s timed wait is a poll, not a guaranteed reap) and Windows then complained
+    /// about terminating a lingering netstat.exe at every reboot. The listener is now resolved in
+    /// process: a GetTcpTable() snapshot, with a WMI command-line match as fallback.
+    /// </summary>
     private static int? GetListeningPid(int port)
+    {
+        var pid = ListeningPidFromTcpTable(port);
+        if (pid != null) return pid;
+        return ListeningPidFromCommandLine(port);
+    }
+
+    /// <summary>Resolve the listener via WinSock's GetTcpTable() (IPv4). Null if it can't be read.</summary>
+    private static int? ListeningPidFromTcpTable(int port)
     {
         try
         {
-            var psi = new ProcessStartInfo
+            var buf = new int[TcpTableDwordCapacity];
+            var size = TcpTableDwordCapacity * 4; // bytes
+            // bOrder=0: the kernel's sort order is irrelevant, we scan for the port ourselves.
+            if (GetTcpTable(ref buf, ref size, 0) != 0) return null;
+
+            var n = buf[0]; // dwNumEntries
+            if (n > TcpTableRowCapacity) n = TcpTableRowCapacity;
+
+            for (var i = 0; i < n; i++)
             {
-                FileName = "netstat",
-                Arguments = "-ano",
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                RedirectStandardOutput = true,
-            };
-            using var proc = Process.Start(psi);
-            if (proc == null) return null;
-            var output = proc.StandardOutput.ReadToEnd();
-            proc.WaitForExit(5000);
+                var rowStart = 1 + i * 7; // row i starts right after the header DWORD
+                if (buf[rowStart] != MibTcpStateListen) continue;
+                // dwLocalPort arrives big-endian in the low 16 bits of the DWORD.
+                var raw = buf[rowStart + 2];
+                var listenPort = ((raw & 0xFF) << 8) | ((raw >> 8) & 0xFF);
+                if (listenPort == port)
+                {
+                    var pid = buf[rowStart + 6]; // dwPid
+                    return pid > 0 ? pid : null;
+                }
+            }
+        }
+        catch
+        {
+            // fall through to the WMI fallback
+        }
+        return null;
+    }
 
-            foreach (var line in output.Split('\n'))
+    /// <summary>
+    /// Fallback when GetTcpTable can't be consulted: find the llama-server whose command line
+    /// declares the target --port, reusing the same WMI command-line read as the log-file probe.
+    /// Less precise than the socket table (a port might be unstated or defaulted), but it needs no
+    /// subprocess and covers the tray's own and router-style launches.
+    /// </summary>
+    private static int? ListeningPidFromCommandLine(int port)
+    {
+        try
+        {
+            foreach (var p in Process.GetProcessesByName("llama-server"))
             {
-                if (!line.Contains("LISTENING", StringComparison.Ordinal)) continue;
-                if (!line.Contains($":{port} ", StringComparison.Ordinal) &&
-                    !line.TrimEnd().EndsWith($":{port}", StringComparison.Ordinal)) continue;
-
-                var parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-                if (parts.Length < 2) continue;
-                var localAddr = parts[1];
-                if (!localAddr.EndsWith($":{port}", StringComparison.Ordinal)) continue;
-
-                if (int.TryParse(parts[^1], out var pid)) return pid;
+                using var searcher = new ManagementObjectSearcher(
+                    $"SELECT CommandLine FROM Win32_Process WHERE ProcessId = {p.Id}");
+                foreach (ManagementObject obj in searcher.Get())
+                {
+                    var cmdLine = obj["CommandLine"]?.ToString();
+                    if (cmdLine == null) continue;
+                    if (cmdLine.Contains($"--port {port}", StringComparison.Ordinal) ||
+                        cmdLine.Contains($"--port={port}", StringComparison.Ordinal))
+                        return p.Id;
+                }
             }
         }
         catch
         {
             // fall through
         }
-
         return null;
     }
 

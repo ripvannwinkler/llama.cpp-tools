@@ -10,3 +10,6 @@ mmproj-disabled/
 
 # pi agent internal state (observational memory, session journals)
 .pi/
+
+# Scratch / temp artifacts
+.scratch/
