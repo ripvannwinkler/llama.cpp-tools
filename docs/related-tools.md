@@ -31,6 +31,13 @@ by `/llama`) that auto-discovers from the router. It is deliberately unused:
 it lists only *loaded* models and hardcodes `reasoning: false`. Don't
 "simplify" the static `llama-local` list away in favour of it.
 
+## OpenCode
+
+`C:\Users\Chris\.config\opencode\opencode.json` — OpenCode's static
+`llama-local` provider. Each entry under `provider.llama-local.models{}` keys
+by model id; `models[id].limit.context` equals that section's `ctx-size` and
+`limit.output` remains an explicit per-tool choice.
+
 ## General
 
 - Entries key by the same model id used in `models.ini` (the `[section]`

@@ -42,6 +42,7 @@ rely solely on the list baked in below. As of this writing the targets are:
 |---|---|---|---|
 | `C:\Users\Chris\AppData\Roaming\Code\User\chatLanguageModels.json` (VS Code chat) | `[0].models[]`, keyed by `id` | `maxInputTokens` | `ctx-size − maxOutputTokens` (that entry's own output, default `8192`) |
 | `C:\Users\Chris\.pi\agent\models.json` (pi) | `providers.llama-local.models[]`, keyed by `id` | `contextWindow` | `ctx-size` (no output subtraction — pi tracks `contextWindow` and `maxTokens` separately, unlike VS Code's combined budget) |
+| `C:\Users\Chris\.config\opencode\opencode.json` (OpenCode) | `provider.llama-local.models{}`, keyed by model id | `models[id].limit.context` | `ctx-size` (leave `limit.output` unchanged) |
 
 ### pi: `input` and `reasoning` are hand-set, not derived
 
