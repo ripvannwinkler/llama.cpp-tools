@@ -488,26 +488,9 @@ internal sealed class LogViewerForm : Form
     [DllImport("user32.dll")]
     private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, ref NativePoint lParam);
 
-    [StructLayout(LayoutKind.Sequential)]
-    private struct ScrollInfo
-    {
-        public uint Size;
-        public uint Mask;
-        public int Min;
-        public int Max;
-        public uint Page;
-        public int Position;
-        public int TrackPosition;
-    }
-
-    [DllImport("user32.dll")]
-    private static extern bool GetScrollInfo(IntPtr hWnd, int bar, ref ScrollInfo info);
-
     private const int WM_SETREDRAW = 0x000B;
     private const int EM_GETSCROLLPOS = 0x04DD;
     private const int EM_SETSCROLLPOS = 0x04DE;
-    private const int SB_VERT = 1;
-    private const uint SIF_ALL = 0x17;
 
     private static readonly Regex AnsiEscapeRegex = new(
         @"\x1B\[[0-9;]*[a-zA-Z]",
@@ -611,17 +594,19 @@ internal sealed class LogViewerForm : Form
 
     private bool IsScrolledToBottom()
     {
-        if (_logText.TextLength == 0) return true;
-
-        var info = new ScrollInfo
-        {
-            Size = (uint)Marshal.SizeOf<ScrollInfo>(),
-            Mask = SIF_ALL,
-        };
-        if (!GetScrollInfo(_logText.Handle, SB_VERT, ref info))
+        if (_logText.TextLength == 0)
             return true;
 
-        return info.Position + (int)info.Page >= info.Max;
+        // RichEdit's scrollbar range is not stable while it is reflowing wrapped
+        // text.  Comparing its position with Max can therefore report "bottom"
+        // for a view that is still several lines up.  Ask the control where its
+        // actual end-of-document position is instead; this also accounts for DPI,
+        // font metrics, and word wrapping.
+        var end = _logText.GetPositionFromCharIndex(_logText.TextLength);
+        // The insertion point is at the top of the final (possibly wrapped)
+        // line.  A small tolerance absorbs the control's one-pixel border without
+        // treating a whole hidden line as being at the bottom.
+        return end.Y <= _logText.ClientSize.Height + 1;
     }
 
     private NativePoint GetScrollPosition()
