@@ -27,7 +27,7 @@ for ($pass = 1; $pass -le 5; $pass++) {
     if (-not $stray) { break }
     Write-Host "Sweep pass $pass : $($stray.Count) stray llama-server process(es)..." -ForegroundColor Cyan
     $stray | ForEach-Object { Stop-Tree $_.Id }
-    Start-Sleep -Milliseconds 600
+    Start-Sleep -Milliseconds 1000
 }
 $left = (Get-Process llama-server -ErrorAction SilentlyContinue).Count
 if ($left) { Write-Host "WARNING: $left llama-server process(es) still alive." -ForegroundColor Red }
