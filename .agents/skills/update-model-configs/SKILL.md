@@ -42,11 +42,28 @@ rely solely on the list baked in below. As of this writing the targets are:
 |---|---|---|---|
 | `C:\Users\Chris\AppData\Roaming\Code\User\chatLanguageModels.json` (VS Code chat) | `[0].models[]`, keyed by `id` | `maxInputTokens` | `ctx-size − maxOutputTokens` (that entry's own output, default `8192`) |
 | `C:\Users\Chris\.pi\agent\models.json` (pi) | `providers.llama-local.models[]`, keyed by `id` | `contextWindow` | `ctx-size` (no output subtraction — pi tracks `contextWindow` and `maxTokens` separately, unlike VS Code's combined budget) |
+| `C:\Users\Chris\.pi\agent\settings.json` (pi defaults) | `modelThinkingLevels`, keyed by `provider/model-id` | per-model thinking level | keep entries aligned with the current pi model list; `defaultThinkingLevel` is the fallback/default and must be reviewed when model capabilities change |
 | `C:\Users\Chris\.config\opencode\opencode.json` (OpenCode) | `provider.llama-local.models{}`, keyed by model id | `models[id].limit.context` | `ctx-size` (leave `limit.output` unchanged) |
 
-### pi: `input` and `reasoning` are hand-set, not derived
+### pi: thinking compatibility, levels, and capabilities are hand-set
 
-pi's static `llama-local` entries carry two capability fields the sync step must
+When adding, removing, renaming, or materially changing a model, update both
+pi files, not just `contextWindow`:
+
+- In `models.json`, review `thinkingCompat` (or the installed schema's
+  equivalent `compat`) and `thinkingLevelMap` for the model. These must describe
+  the template's actual thinking interface: preserve the existing compatibility
+  shape only when it is known to work, and do not copy a sibling's map blindly.
+  Unsupported levels should be `null`; supported levels should map to the
+  exact value accepted by the chat template/server.
+- In `settings.json`, reconcile `modelThinkingLevels` using exact keys of the
+  form `llama-local/<models.ini id>` (remove stale ids, add new ids, and retain
+  deliberate per-model defaults). Review `defaultThinkingLevel` as well: it is
+  the fallback for models without an explicit override, so it must be a level
+  supported by the newly synced model set. Do not silently change a user's
+  deliberate defaults; flag an ambiguous choice.
+
+pi's static `llama-local` entries carry capability fields the sync step must
 never write blind:
 
 - `input`: `["text", "image"]` when that `models.ini` section has an `mmproj`
@@ -122,12 +139,17 @@ should ever decide to widen a name beyond the rule above.
      - Present in the config but gone from models.ini → remove it.
      - Renamed → treat as remove-old + add-new (ids must match exactly).
    - **Context field.** Set it per the mapping table above for every entry.
-3. **Output-token fields are NOT derived from models.ini.** `maxOutputTokens`
+3. **Thinking fields are NOT derived from models.ini.** Reconcile pi's
+   `thinkingCompat`/`compat`, `thinkingLevelMap`, `settings.json`'s
+   `modelThinkingLevels`, and the fallback `defaultThinkingLevel` as described
+   above; verify template/server support and flag uncertain choices instead of
+   guessing.
+4. **Output-token fields are NOT derived from models.ini.** `maxOutputTokens`
    encodes a deliberate per-tool choice. Leave it as it is. The one exception:
    VS Code's `maxInputTokens` **is** derived (`ctx-size − maxOutputTokens`), so
    recompute it whenever either input changes, using that entry's existing
    `maxOutputTokens`.
-4. Edit the JSON in place with targeted replacements — do not regenerate/reindent
+5. Edit the JSON in place with targeted replacements — do not regenerate/reindent
    the whole file. Preserve existing key order, 2-space indentation, and any
    blank lines so the diff stays minimal.
 
@@ -137,6 +159,11 @@ After editing, re-read each target and confirm:
 - Its set of model ids matches the `models.ini` sections exactly (no extras, none
   missing).
 - Each entry's context field equals the expected value from the mapping table.
+- pi `models.json` has reviewed `thinkingCompat`/`compat` and
+  `thinkingLevelMap` values for every affected model.
+- pi `settings.json` has no stale `modelThinkingLevels` keys, includes every
+  current `llama-local` model where appropriate, and its `defaultThinkingLevel`
+  is intentionally compatible with the model set.
 
 Report a table: `model id | models.ini ctx-size | VS Code maxInputTokens`
 (VS Code column = ctx − that model's output).
