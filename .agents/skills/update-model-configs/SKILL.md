@@ -43,7 +43,7 @@ rely solely on the list baked in below. As of this writing the targets are:
 | `C:\Users\Chris\AppData\Roaming\Code\User\chatLanguageModels.json` (VS Code chat) | `[0].models[]`, keyed by `id` | `maxInputTokens` | `ctx-size − maxOutputTokens` (that entry's own output, default `8192`) |
 | `C:\Users\Chris\.pi\agent\models.json` (pi) | `providers.llama-local.models[]`, keyed by `id` | `contextWindow` | `ctx-size` (no output subtraction — pi tracks `contextWindow` and `maxTokens` separately, unlike VS Code's combined budget) |
 | `C:\Users\Chris\.pi\agent\settings.json` (pi defaults) | `modelThinkingLevels`, keyed by `provider/model-id` | per-model thinking level | keep entries aligned with the current pi model list; `defaultThinkingLevel` is the fallback/default and must be reviewed when model capabilities change |
-| `C:\Users\Chris\.config\opencode\opencode.json` (OpenCode) | `provider.llama-local.models{}`, keyed by model id | `models[id].limit.context` | `ctx-size` (leave `limit.output` unchanged) |
+| `C:\Users\Chris\.config\opencode\opencode.json` (OpenCode) | `provider.llama-local.models{}`, keyed by the exact model id | `models[id].limit.context` | `ctx-size` (leave `limit.output` unchanged); `models[id].name` must also be the exact model id |
 
 ### pi: thinking compatibility, levels, and capabilities are hand-set
 
@@ -87,7 +87,10 @@ Do not touch `apiKey` (`not-required`), `baseUrl`, or `api` — see AGENTS.md
 for why the dummy key must stay.
 
 All entries key by the **exact** `models.ini` section name (including
-spaces/parens, e.g. `Qwen3-VL-8B-Instruct (Lite, Uncensored)`).
+spaces/parens, e.g. `Qwen3-VL-8B-Instruct (Lite, Uncensored)`). OpenCode must
+use that exact string for both the model object key and its `name` field; never
+use a shortened or display-only name there. (The shortened-name rule below
+applies only to pi.)
 
 ### pi `name` field must stay short
 
@@ -133,12 +136,17 @@ should ever decide to widen a name beyond the rule above.
      - Missing → add an entry, copying the shape of a sibling entry (same
        `url`/provider fields, `vision`/`input`/`toolCalling`
        per the model's real capabilities — check the models.ini preset for an
-       `mmproj` line to decide vision/image support). For pi's `name`,
+       `mmproj` line to decide vision/image support). For OpenCode, set both
+       the object key and `name` to the exact models.ini section name. For pi's
+       `name`,
        apply the derivation rule in "pi `name` field must stay short"
        above — do not copy the id verbatim.
      - Present in the config but gone from models.ini → remove it.
      - Renamed → treat as remove-old + add-new (ids must match exactly).
    - **Context field.** Set it per the mapping table above for every entry.
+   - **OpenCode names.** For every present entry, set `models[id].name` to the
+     exact `models.ini` section name as well; correct shortened or friendly
+     names, including entries that otherwise need no change.
 3. **Thinking fields are NOT derived from models.ini.** Reconcile pi's
    `thinkingCompat`/`compat`, `thinkingLevelMap`, `settings.json`'s
    `modelThinkingLevels`, and the fallback `defaultThinkingLevel` as described
@@ -159,6 +167,8 @@ After editing, re-read each target and confirm:
 - Its set of model ids matches the `models.ini` sections exactly (no extras, none
   missing).
 - Each entry's context field equals the expected value from the mapping table.
+- OpenCode uses the exact models.ini section name as both each model key and
+  its `name` value; no shortened aliases remain.
 - pi `models.json` has reviewed `thinkingCompat`/`compat` and
   `thinkingLevelMap` values for every affected model.
 - pi `settings.json` has no stale `modelThinkingLevels` keys, includes every
