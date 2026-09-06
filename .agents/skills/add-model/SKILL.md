@@ -23,6 +23,13 @@ only when its files are verified, its preset is internally consistent and
 validated as far as the available GPU permits, and the external model configs
 have been synchronized.
 
+Before commencing any testing, probing, loading, benchmarking, or smoke test,
+pause and ask the user for explicit confirmation. This confirmation is required
+even when testing is the next step in an already-approved model-installation
+plan, unless the user has already explicitly approved testing in the current
+request or conversation. Configuration and file-integrity checks are not live
+model testing; live server requests, context probes, and generation tests are.
+
 ## Phase 1: understand the request and inspect the setup
 
 1. Read `D:\llama.cpp\AGENTS.md`, the complete current
@@ -208,6 +215,11 @@ staging folder into its final `models/<folder-name>` location and edit
 `models.ini`.
 
 ## Phase 5: load and smoke-test
+
+Before starting this phase, pause and ask for explicit user confirmation to
+commence testing unless that approval was already given explicitly. Do not
+restart the router, load the model, send requests, probe context, benchmark, or
+run smoke tests before confirmation.
 
 After changing `models.ini`, restart the router because a running router does
 not reread presets. Use the repository scripts rather than killing only a
