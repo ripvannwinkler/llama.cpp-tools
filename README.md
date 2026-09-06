@@ -41,8 +41,7 @@ D:\llama.cpp\
   tray\           Windows tray app (GUI equivalent of the scripts above)
   README.md       this file
   server.log      runtime log - single file, path comes from LogFile
-                  (server.err.log = previous script-launched run; the old
-                  server.out.log is no longer written)
+                  (server.log is the unified router and worker log)
 ```
 
 ## Hardware / toolchain (as built)

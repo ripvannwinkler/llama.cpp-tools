@@ -59,7 +59,7 @@ for ($i = 0; $i -lt 120; $i++) {
     catch {
         $errorMessage = $_.ErrorDetails.Message
         if ($errorMessage -match "failed to load") {
-            Write-Host "Load failed (OOM at this model context). See server.err.log." -ForegroundColor Red
+            Write-Host "Load failed (OOM at this model context). See server.log." -ForegroundColor Red
             return
         }
     }
@@ -70,5 +70,5 @@ if ($nctx) {
     Write-Host ("{0}: {1}  (n_ctx {2})" -f $verb, $sel, $nctx) -ForegroundColor Green
     Write-Host ("VRAM: " + (& nvidia-smi --query-gpu=memory.used --format=csv,noheader))
 } else {
-    Write-Host "Load requested but model not ready after 60s; check server.err.log." -ForegroundColor Yellow
+    Write-Host "Load requested but model not ready after 60s; check server.log." -ForegroundColor Yellow
 }

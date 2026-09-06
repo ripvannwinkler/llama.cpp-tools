@@ -10,11 +10,7 @@ internal sealed class AppConfig
     public string ServerExe { get; set; } = @"D:\llama.cpp\src\build\bin\llama-server.exe";
     public string ModelsDir { get; set; } = @"D:\llama.cpp\models";
     public string PresetIni { get; set; } = @"D:\llama.cpp\models.ini";
-    public string LogFile { get; set; } = @"D:\llama.cpp\server.err.log";
-    [JsonPropertyName("StdOutLog")]
-    public string LegacyStdOutLog { get; set; } = @"D:\llama.cpp\server.out.log";
-    [JsonPropertyName("StdErrLog")]
-    public string LegacyStdErrLog { get; set; } = @"D:\llama.cpp\server.err.log";
+    public string LogFile { get; set; } = @"D:\llama.cpp\server.log";
     public int MaxModels { get; set; } = 1;
     public int AutoUnloadMinutes { get; set; } = 15;
 
@@ -52,13 +48,9 @@ internal static class ServerConfig
                 return baseCfg;
 
             var defaults = new AppConfig();
-            var logFile = baseCfg.LogFile;
-            if (!string.Equals(layer.LogFile, defaults.LogFile, StringComparison.OrdinalIgnoreCase))
-                logFile = layer.LogFile;
-            else if (!string.Equals(layer.LegacyStdErrLog, defaults.LegacyStdErrLog, StringComparison.OrdinalIgnoreCase))
-                logFile = layer.LegacyStdErrLog;
-            else if (!string.Equals(layer.LegacyStdOutLog, defaults.LegacyStdOutLog, StringComparison.OrdinalIgnoreCase))
-                logFile = layer.LegacyStdOutLog;
+            var logFile = !string.Equals(layer.LogFile, defaults.LogFile, StringComparison.OrdinalIgnoreCase)
+                ? layer.LogFile
+                : baseCfg.LogFile;
             return new AppConfig
             {
                 Port = layer.Port != defaults.Port ? layer.Port : baseCfg.Port,

@@ -46,18 +46,13 @@ Details for the personal setup documented in the root [AGENTS.md](../AGENTS.md).
   those all come from `models.ini`), and polls `/health` and `/models` to
   confirm start/load.
 - Log file: there is one, not a stdout/stderr pair. `start-llama.ps1` /
-  `restart-llama.ps1` pass llama.cpp's `--log-file` (default
-  `D:\llama.cpp\server.err.log`). The tray app captures the server's
-  stdout/stderr into a unique per-launch temp file
-  (`%TEMP%\llama-server-tray-<timestamp>-<random>.log`) instead of the
-  configured `LogFile`, because truncating a file another tool has open fails;
-  `ServerController.ActiveLogFile` exposes it and the View Log dialog follows
-  it (re-pointing on each start). The configured `LogFile` (from
-  `appsettings.json` layered with `publish/appsettings.local.json`)
-  is only the fallback when the server wasn't started by the tray.
-  `server.err.log`/`server.log` hold script- and older tray-launched runs;
-  `server.out.log` is dead: `ServerConfig.cs` still names it
-  `LegacyStdOutLog` and nothing writes it.
+  `restart-llama.ps1` and the tray pass llama.cpp's `--log-file`, defaulting
+  to the unified `D:\llama.cpp\server.log`. The tray verifies that shared
+  path is writable without truncating it; only a locked path causes a
+  per-launch temp-file fallback. `ServerController.ActiveLogFile` exposes the
+  actual path and the View Log dialog follows it. The benchmark and context
+  probe scripts retain separate temporary stdout/stderr captures so they can
+  diagnose failed experimental launches.
 - Router process model: the port 8080 router spawns a separate
   `llama-server.exe` worker per loaded model on a dynamic localhost port
   (`--models-max 1` right now, so one worker at a time), and proxies OpenAI

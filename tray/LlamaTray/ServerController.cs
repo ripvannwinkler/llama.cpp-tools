@@ -216,13 +216,19 @@ internal sealed class ServerController
             args.Add(ServerConfig.Current.PresetIni);
         }
 
-        var logPath = Path.Combine(
-            Path.GetTempPath(),
-            $"llama-server-tray-{DateTimeOffset.UtcNow.ToString("yyyy-MM-ddTHH-mm-ssZ", CultureInfo.InvariantCulture)}.log");
-
-        // Best-effort cleanup of the previous launch's temp log.
-        try { if (_logFilePath != null && File.Exists(_logFilePath)) File.Delete(_logFilePath); }
-        catch { /* someone still has it open */ }
+        var logPath = ServerConfig.Current.LogFile;
+        try
+        {
+            // Verify the configured shared log is writable without truncating it.
+            using var probe = new FileStream(logPath, FileMode.OpenOrCreate, FileAccess.Write, FileShare.ReadWrite);
+        }
+        catch
+        {
+            // A stale process may still hold the configured path exclusively.
+            logPath = Path.Combine(
+                Path.GetTempPath(),
+                $"llama-server-tray-{DateTimeOffset.UtcNow.ToString("yyyy-MM-ddTHH-mm-ssZ", CultureInfo.InvariantCulture)}.log");
+        }
 
         _logFilePath = logPath;
         args.Add("--log-file");

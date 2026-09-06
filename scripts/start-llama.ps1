@@ -4,7 +4,7 @@ param(
     [int]$Port = 8080,
     [int]$MaxModels = 1,          # keep 1: only one model in VRAM at a time (32 GB is tight)
     [int]$Ctx = 0,                # 0 = use per-model ctx-size from models.ini; >0 overrides ALL models
-    [string]$LogFile = 'D:\llama.cpp\server.err.log'
+    [string]$LogFile = 'D:\llama.cpp\server.log'
 )
 
 $ErrorActionPreference = 'Stop'
