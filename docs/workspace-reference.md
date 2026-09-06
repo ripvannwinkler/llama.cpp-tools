@@ -12,13 +12,13 @@ Details for the personal setup documented in the root [AGENTS.md](../AGENTS.md).
 - `templates/` — custom chat templates referenced by `chat-template-file`
   in `models.ini` (`Qwen-Sharp-Chat-Template.jinja`,
   `Gemma31b_fixed_chat_template.jinja`, plus older ones).
-- `drafters/` — speculative draft models (currently `Qwen3.8-27B-DFlash2`),
-  loaded through `spec-draft-model` in `models.ini`. Kept out of `models/`,
-  which the router auto-scans into servable presets.
+- `drafters/` — speculative draft models (currently the standard MTP drafter
+  for Qwen3.8-27B), loaded through `spec-draft-model` in `models.ini`. Kept
+  out of `models/`, which the router auto-scans into servable presets.
 - `mmproj/` — vision projectors not attached to a model folder (currently
-  `mmproj-BF16-qwen38_27b.gguf`, whose `mmproj` line in `models.ini` is
-  commented out). Also outside `models/`; note some projectors do live inside
-  their model folder, so check both places when a preset's `mmproj` is edited.
+  `mmproj-BF16-qwen38_27b.gguf`, wired to the Qwen3.8-27B preset). Also outside
+  `models/`; note some projectors do live inside their model folder, so check
+  both places when a preset's `mmproj` is edited.
 - `merge/` — one-off `download_and_merge.py` plus its own pip-tools venv
   (`requirements.in` / `requirements.txt`), used to merge an upstream HF repo
   ahead of GGUF conversion. Not part of the running server.
