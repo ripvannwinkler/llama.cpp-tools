@@ -18,10 +18,9 @@ is upstream's contributor policy, not relevant here). Detailed reference:
 - `scripts/` — `start/stop/restart-llama.ps1`, `load.ps1`, `bench.ps1`,
   `bench-spec.ps1`/`bench-dflash2.ps1`, `probe-ctx*.ps1`, `update.ps1`.
   See the reference doc for what each does.
-- `tray/LlamaTray/` — C# tray app wrapping the same router (starts
-  `llama-server.exe` with no per-model flags; those come from `models.ini`).
-  Log: one file, whatever `LogFile` resolves to (`server.log` at the repo
-  root right now). See the reference doc for the override chain.
+- `tray/LlamaTray/` — legacy C# tray app wrapping the same router. Unsloth
+  app is now the operational model manager and serves
+  `http://127.0.0.1:8888/v1`; the tray is not the default serving path.
 
 ## Rules
 
@@ -35,6 +34,6 @@ is upstream's contributor policy, not relevant here). Detailed reference:
 - **Mirrored external configs**: whenever a model's `ctx-size` (or the model
   list) changes in `models.ini`, also update the VS Code chat model list
   (`C:\Users\Chris\AppData\Roaming\Code\User\chatLanguageModels.json`) and
-  pi's `llama-local` provider (`C:\Users\Chris\.pi\agent\models.json`).
+  pi's `unsloth` provider (`C:\Users\Chris\.pi\agent\models.json`).
   Use the `update-model-configs` skill; invariants and details in
   [docs/related-tools.md](docs/related-tools.md).

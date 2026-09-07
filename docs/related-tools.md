@@ -1,10 +1,12 @@
 # Mirrored external configs (moved out of AGENTS.md)
 
 Several configs outside this repo duplicate each model's id and **context
-size** so that other tools can talk to the same router
-(`http://127.0.0.1:8080/v1`). Whenever a model's `ctx-size` (or the model
-list itself) changes in `models.ini`, update these too — prefer the
-`update-model-configs` skill.
+size** so that other tools can talk to Unsloth
+(`http://127.0.0.1:8888/v1`). The `update-model-configs` skill discovers the
+model list from `GET /v1/models`; it no longer uses `models.ini` as the list
+source. Context and capability metadata are preserved for existing entries,
+and new endpoint models receive conservative `8192` text-only defaults until
+reviewed.
 
 ## VS Code
 
@@ -15,8 +17,8 @@ corresponding `models.ini` section.
 
 ## pi
 
-`C:\Users\Chris\.pi\agent\models.json` — pi's `llama-local` provider.
-Each entry under `providers.llama-local.models[]` keys by `id` (the
+`C:\Users\Chris\.pi\agent\models.json` — pi's `unsloth` provider.
+Each entry under `providers.unsloth.models[]` keys by `id` (the
 `models.ini` section name); `contextWindow` = that section's `ctx-size`.
 `maxTokens` is a deliberate per-tool choice, not derived (currently `65536`
 everywhere) — leave it alone unless asked. `apiKey` is a dummy literal
@@ -29,7 +31,7 @@ the section's `mmproj` line and its `reasoning = on` flag.
 pi also ships a **built-in** `llama.cpp` provider (`/login llama.cpp`, driven
 by `/llama`) that auto-discovers from the router. It is deliberately unused:
 it lists only *loaded* models and hardcodes `reasoning: false`. Don't
-"simplify" the static `llama-local` list away in favour of it.
+"simplify" the static `unsloth` list away in favour of it.
 
 ## OpenCode
 

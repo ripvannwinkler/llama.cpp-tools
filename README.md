@@ -223,7 +223,7 @@ To rebuild after changes: `dotnet publish -c Release -r win-x64 --self-contained
 
 ## pi integration
 
-`~/.pi/agent/models.json` → provider `llama-local` points at `http://127.0.0.1:8080/v1`.
+`~/.pi/agent/models.json` → provider `unsloth` points at `http://127.0.0.1:8888/v1`.
 Each entry's **`id` must exactly match the router id** (the flat folder names above). pi only lists the
 models defined there (not raw `/v1/models`), so a new preset needs an entry before it is selectable.
 `apiKey` is the dummy literal `not-required` — the router needs no key, but pi hides models whose

@@ -40,7 +40,8 @@ Details for the personal setup documented in the root [AGENTS.md](../AGENTS.md).
     model's mmproj, drafter, and KV types); `probe-ctx.ps1` — simpler probe
     that does not represent the complete preset.
   - `update.ps1` — rebuild/update the vendored `llama.cpp` checkout in `src/`.
-- `tray/LlamaTray/` — a Windows tray app (C#) that wraps the same router:
+- `tray/LlamaTray/` — legacy Windows tray app (C#); Unsloth app is now the
+  operational model manager and serves `http://127.0.0.1:8888/v1`.
   `ServerController.cs` starts `llama-server.exe` with
   `--models-dir`/`--models-preset`/`--port`/`--host` (no per-model flags —
   those all come from `models.ini`), and polls `/health` and `/models` to
@@ -53,7 +54,7 @@ Details for the personal setup documented in the root [AGENTS.md](../AGENTS.md).
   actual path and the View Log dialog follows it. The benchmark and context
   probe scripts retain separate temporary stdout/stderr captures so they can
   diagnose failed experimental launches.
-- Router process model: the port 8080 router spawns a separate
+- Legacy router process model: the port 8080 router spawns a separate
   `llama-server.exe` worker per loaded model on a dynamic localhost port
   (`--models-max 1` right now, so one worker at a time), and proxies OpenAI
   requests to it. Two `llama-server` processes in the task list is normal.

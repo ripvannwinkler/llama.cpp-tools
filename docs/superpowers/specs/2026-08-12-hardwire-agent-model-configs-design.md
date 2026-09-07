@@ -3,7 +3,7 @@
 ## Context
 
 Three external tools mirror this repo's `models.ini` router presets so their
-model pickers work against `http://127.0.0.1:8080/v1`: VS Code, opencode, and
+model pickers work against `http://127.0.0.1:8888/v1`: VS Code, opencode, and
 pi. VS Code's `chatLanguageModels.json` has always been hand-maintained
 (`AGENTS.md`'s "Related tools" section, kept in sync by the
 `update-model-configs` skill). opencode and pi were instead wired for
@@ -34,7 +34,7 @@ and were never covered by that skill's registry.
     key `"llama.cpp"`, unused (leave as-is, don't touch).
   - The **`pi-llama-cpp` extension** (npm package, listed in
     `~/.pi/agent/settings.json`'s `packages`) — registers provider id
-    `llama-server=http://127.0.0.1:8080`, currently `settings.json`'s
+    `llama-server=http://127.0.0.1:8888`, currently `settings.json`'s
     `defaultProvider`. This is what's actually in active use today.
   - `~/.pi/agent/models.json` (currently `{ "providers": {} }`) is pi core's
     **native static-provider mechanism** — fully documented, independent of
@@ -53,8 +53,8 @@ and were never covered by that skill's registry.
    ```json
    {
      "providers": {
-       "llama-local": {
-         "baseUrl": "http://127.0.0.1:8080/v1",
+       "unsloth": {
+         "baseUrl": "http://127.0.0.1:8888/v1",
          "api": "openai-completions",
          "apiKey": "not-required",
          "models": [ /* one entry per models.ini section, see table below */ ]
@@ -70,10 +70,10 @@ and were never covered by that skill's registry.
    `settings.json`'s `packages` array). This also removes its
    `llama-server=...` provider — the live load/unload/switch UI it gave up
    goes away. Equivalent functionality already exists in this repo:
-   `scripts\load.ps1` / `unload-llama.ps1`, and LlamaTray for start/stop.
+   `scripts\load.ps1` / `unload-llama.ps1`; Unsloth app now manages serving.
 
 3. Update `~/.pi/agent/settings.json`: `defaultProvider` →
-   `"llama-local"`, `defaultModel` → keep `"Gemma-4-31B-it-QAT-Abliterated"`
+   `"unsloth"`, `defaultModel` → keep `"Gemma-4-31B-it-QAT-Abliterated"`
    (same model, new provider id).
 
 4. Leave `auth.json`'s existing `"llama.cpp"` entry untouched — it's for the
@@ -140,7 +140,7 @@ tools" registry table) with two more targets:
 | Config file | Model list path | Context field |
 |---|---|---|
 | `C:\Users\Chris\.config\opencode\opencode.json` | `provider.llama-local.models{}` | `models[id].limit.context` |
-| `C:\Users\Chris\.pi\agent\models.json` | `providers.llama-local.models[]` | `models[].contextWindow` |
+| `C:\Users\Chris\.pi\agent\models.json` | `providers.unsloth.models[]` | `models[].contextWindow` |
 
 Same reconciliation rules as the existing VS Code target (add/remove/rename
 by `models.ini` section, recompute context from `ctx-size`, leave
@@ -152,7 +152,7 @@ does by deferring to hand-set `toolCalling` for VS Code.
 
 ## Verification
 
-- `pi --list-models llama-local` (or `/model` inside pi) shows exactly the 5
+- `pi --list-models unsloth` (or `/model` inside pi) shows exactly the 5
   models above with the right context sizes, with no live network call to
   the router required for the list to populate (test by stopping the router
   first — the model list must still appear, only load/inference would fail).

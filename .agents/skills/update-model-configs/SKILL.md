@@ -1,29 +1,32 @@
 ---
 name: update-model-configs
 description: >
-  Sync the external tool configs that mirror this repo's llama.cpp router model
-  list after models.ini changes. Use whenever a model's ctx-size changes, or a
-  model is added / removed / renamed in models.ini — it propagates the model id
-  list and context size into the VS Code chat model list and the pi
-  config (and any other related-tool configs listed in AGENTS.md). Trigger on:
-  "update model configs", "sync the related tools", "I changed models.ini",
-  "propagate ctx-size", after editing a preset's ctx-size or the [section] list.
+  Sync external tool configs from the Unsloth model endpoint. Use whenever the
+  served model list changes or a related-tool config needs reconciliation. The
+  endpoint supplies model ids; existing local metadata is preserved and new
+  models receive documented conservative defaults. Trigger on: "update model
+  configs", "sync the related tools", or "refresh the Unsloth model list".
 ---
 
 # update-model-configs
 
-Propagate model changes from `models.ini` (the source of truth) into the
-external tool configs that duplicate the router's model list. These configs live
+Propagate model changes from Unsloth's `/v1/models` endpoint into the
+external tool configs that duplicate the served model list. These configs live
 **outside this repo** (absolute Windows paths) and are not under git here, so
 there is nothing to commit for them — just edit in place.
 
 ## Source of truth
 
-`D:\llama.cpp\models.ini` — each `[section]` is a model id (= folder name under
-`models/`). The value to propagate is that section's `ctx-size`, falling back to
-the `[*]` global (`8192`) if a section has no explicit `ctx-size`. The set of
-`[section]` names is the authoritative model list. Ignore `[*]` itself — it is
-the global default, not a model.
+Unsloth's OpenAI-compatible endpoint is the source of truth:
+`GET http://127.0.0.1:8888/v1/models`. Use each returned `data[].id` as the
+model list. Do not enumerate model sections from `models.ini`.
+
+The endpoint currently does not expose context size, vision, or reasoning
+metadata. For existing entries, preserve those fields while reconciling the
+endpoint model list. For newly discovered entries, use the tool's existing
+fallback context (`8192` for VS Code's input-budget calculation and `8192` for
+pi/OpenCode context) and conservative text-only, non-reasoning capabilities;
+flag these defaults in the report for manual review.
 
 Do **not** propagate KV-quant changes (`cache-type-k` / `cache-type-v`),
 `batch-size`, `ubatch-size`, `spec-type`, templates, etc. — the related configs
@@ -41,7 +44,7 @@ rely solely on the list baked in below. As of this writing the targets are:
 | Config file | Model list path | Context field | Value = |
 |---|---|---|---|
 | `C:\Users\Chris\AppData\Roaming\Code\User\chatLanguageModels.json` (VS Code chat) | `[0].models[]`, keyed by `id` | `maxInputTokens` | `ctx-size − maxOutputTokens` (that entry's own output, default `8192`) |
-| `C:\Users\Chris\.pi\agent\models.json` (pi) | `providers.llama-local.models[]`, keyed by `id` | `contextWindow` | `ctx-size` (no output subtraction — pi tracks `contextWindow` and `maxTokens` separately, unlike VS Code's combined budget) |
+| `C:\Users\Chris\.pi\agent\models.json` (pi) | `providers.unsloth.models[]`, keyed by `id` | `contextWindow` | `ctx-size` (no output subtraction — pi tracks `contextWindow` and `maxTokens` separately, unlike VS Code's combined budget) |
 | `C:\Users\Chris\.pi\agent\settings.json` (pi defaults) | `modelThinkingLevels`, keyed by `provider/model-id` | per-model thinking level | keep entries aligned with the current pi model list; `defaultThinkingLevel` is the fallback/default and must be reviewed when model capabilities change |
 | `C:\Users\Chris\.config\opencode\opencode.json` (OpenCode) | `provider.llama-local.models{}`, keyed by the exact model id | `models[id].limit.context` | `ctx-size` (leave `limit.output` unchanged); `models[id].name` must also be the exact model id |
 
@@ -57,13 +60,13 @@ pi files, not just `contextWindow`:
   Unsupported levels should be `null`; supported levels should map to the
   exact value accepted by the chat template/server.
 - In `settings.json`, reconcile `modelThinkingLevels` using exact keys of the
-  form `llama-local/<models.ini id>` (remove stale ids, add new ids, and retain
+  form `unsloth/<models.ini id>` (remove stale ids, add new ids, and retain
   deliberate per-model defaults). Review `defaultThinkingLevel` as well: it is
   the fallback for models without an explicit override, so it must be a level
   supported by the newly synced model set. Do not silently change a user's
   deliberate defaults; flag an ambiguous choice.
 
-pi's static `llama-local` entries carry capability fields the sync step must
+pi's static `unsloth` entries carry capability fields the sync step must
 never write blind:
 
 - `input`: `["text", "image"]` when that `models.ini` section has an `mmproj`
@@ -84,7 +87,8 @@ user, the same way `toolCalling` is already handled for VS Code. Never *remove*
 an existing `input`, `reasoning`, or `compat` while syncing context sizes.
 
 Do not touch `apiKey` (`not-required`), `baseUrl`, or `api` — see AGENTS.md
-for why the dummy key must stay.
+for why the dummy key must stay. The `unsloth` base URL is managed outside
+this skill and should point to Unsloth at `http://127.0.0.1:8888/v1`.
 
 All entries key by the **exact** `models.ini` section name (including
 spaces/parens, e.g. `Qwen3-VL-8B-Instruct (Lite, Uncensored)`). OpenCode must
@@ -129,10 +133,11 @@ should ever decide to widen a name beyond the rule above.
 
 ## Procedure
 
-1. Parse `models.ini`: build a map of `{ section-name → ctx-size }` (apply the
-   `[*]` fallback). This is the desired model set.
-2. For each target file, read it and reconcile against that map:
-   - **Model list.** Every models.ini section must have exactly one entry.
+1. Query `GET http://127.0.0.1:8888/v1/models` and build the desired model set
+   from `data[].id`. If the endpoint is unavailable or returns malformed data,
+   stop without editing any target.
+2. For each target file, read it and reconcile against that endpoint model set:
+   - **Model list.** Every endpoint model id must have exactly one entry.
      - Missing → add an entry, copying the shape of a sibling entry (same
        `url`/provider fields, `vision`/`input`/`toolCalling`
        per the model's real capabilities — check the models.ini preset for an
@@ -141,9 +146,11 @@ should ever decide to widen a name beyond the rule above.
        `name`,
        apply the derivation rule in "pi `name` field must stay short"
        above — do not copy the id verbatim.
-     - Present in the config but gone from models.ini → remove it.
+     - Present in the config but gone from the endpoint → remove it.
      - Renamed → treat as remove-old + add-new (ids must match exactly).
-   - **Context field.** Set it per the mapping table above for every entry.
+   - **Context field.** Preserve existing values; use the documented `8192`
+       fallback for newly discovered entries because Unsloth does not currently
+       return context size.
    - **OpenCode names.** For every present entry, set `models[id].name` to the
      exact `models.ini` section name as well; correct shortened or friendly
      names, including entries that otherwise need no change.
@@ -164,19 +171,20 @@ should ever decide to widen a name beyond the rule above.
 ## Verification
 
 After editing, re-read each target and confirm:
-- Its set of model ids matches the `models.ini` sections exactly (no extras, none
-  missing).
-- Each entry's context field equals the expected value from the mapping table.
+- Its set of model ids matches Unsloth's `/v1/models` ids exactly (no extras,
+  none missing).
+- Existing context values were preserved; new entries use the documented
+  `8192` fallback and are flagged for review.
 - OpenCode uses the exact models.ini section name as both each model key and
   its `name` value; no shortened aliases remain.
 - pi `models.json` has reviewed `thinkingCompat`/`compat` and
   `thinkingLevelMap` values for every affected model.
 - pi `settings.json` has no stale `modelThinkingLevels` keys, includes every
-  current `llama-local` model where appropriate, and its `defaultThinkingLevel`
+  current `unsloth` model where appropriate, and its `defaultThinkingLevel`
   is intentionally compatible with the model set.
 
-Report a table: `model id | models.ini ctx-size | VS Code maxInputTokens`
-(VS Code column = ctx − that model's output).
+Report a table: `model id | endpoint metadata | VS Code maxInputTokens`, and
+flag any new model using fallback metadata.
 
 ## Notes
 
