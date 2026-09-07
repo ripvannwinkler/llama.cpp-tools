@@ -1,17 +1,18 @@
 ---
 name: update-model-configs
 description: >
-  Sync external tool configs from the Unsloth model endpoint. Use whenever the
-  served model list changes or a related-tool config needs reconciliation. The
-  endpoint supplies model ids; existing local metadata is preserved and new
-  models receive documented conservative defaults. Trigger on: "update model
-  configs", "sync the related tools", or "refresh the Unsloth model list".
+  Sync external tool configs from the Unsloth model endpoint with interactive
+  model selection. Use whenever the served model list changes or a related-tool
+  config needs reconciliation. The endpoint supplies model ids; you select which
+  models to sync, and all others are removed from the configs. Trigger on:
+  "update model configs", "sync the related tools", or "refresh the Unsloth model list".
 ---
 
 # update-model-configs
 
 Propagate model changes from Unsloth's `/v1/models` endpoint into the
-external tool configs that duplicate the served model list. These configs live
+external tool configs, with **interactive model selection**. You choose which
+models to sync; all others are removed from the configs. These configs live
 **outside this repo** (absolute Windows paths) and are not under git here, so
 there is nothing to commit for them — just edit in place.
 
@@ -19,14 +20,14 @@ there is nothing to commit for them — just edit in place.
 
 Unsloth's OpenAI-compatible endpoint is the source of truth:
 `GET http://127.0.0.1:8888/v1/models`. Use each returned `data[].id` as the
-model list. Do not enumerate model sections from `models.ini`.
+model list for the selection prompt. Do not enumerate model sections from
+`models.ini`.
 
 The endpoint currently does not expose context size, vision, or reasoning
-metadata. For existing entries, preserve those fields while reconciling the
-endpoint model list. For newly discovered entries, use the tool's existing
-fallback context (`8192` for VS Code's input-budget calculation and `8192` for
-pi/OpenCode context) and conservative text-only, non-reasoning capabilities;
-flag these defaults in the report for manual review.
+metadata. For selected entries, use the tool's existing fallback context
+(`8192` for VS Code's input-budget calculation and `8192` for pi/OpenCode
+context) and conservative text-only, non-reasoning capabilities; flag these
+defaults in the report for manual review.
 
 Do **not** propagate KV-quant changes (`cache-type-k` / `cache-type-v`),
 `batch-size`, `ubatch-size`, `spec-type`, templates, etc. — the related configs
@@ -34,10 +35,10 @@ only track the **model id list** and **context size**. (Exception: a KV-quant
 change that also changes the max `ctx-size` that fits in VRAM — then it's really
 a ctx-size change and does propagate.)
 
-## Targets — read AGENTS.md first
+## Targets — read docs/related-tools.md first
 
-`AGENTS.md` → section **"Related tools — update whenever model params change"**
-is the registry of target files and the exact mapping rule for each. Re-read it
+`docs/related-tools.md` (section **"Mirrored external configs"**) is the
+registry of target files and the exact mapping rule for each. Re-read it
 every run so a newly added tool (e.g. a Claude CLI config) is picked up — do not
 rely solely on the list baked in below. As of this writing the targets are:
 
@@ -86,8 +87,8 @@ Flag the likely value for a new/changed preset but leave the final call to the
 user, the same way `toolCalling` is already handled for VS Code. Never *remove*
 an existing `input`, `reasoning`, or `compat` while syncing context sizes.
 
-Do not touch `apiKey` (`not-required`), `baseUrl`, or `api` — see AGENTS.md
-for why the dummy key must stay. The `unsloth` base URL is managed outside
+Do not touch `apiKey` (`not-required`), `baseUrl`, or `api` — see
+`docs/related-tools.md` for why the dummy key must stay. The `unsloth` base URL is managed outside
 this skill and should point to Unsloth at `http://127.0.0.1:8888/v1`.
 
 All entries key by the **exact** `models.ini` section name (including
@@ -133,58 +134,75 @@ should ever decide to widen a name beyond the rule above.
 
 ## Procedure
 
+### Phase 1 — Select models to sync
+
 1. Query `GET http://127.0.0.1:8888/v1/models` and build the desired model set
    from `data[].id`. If the endpoint is unavailable or returns malformed data,
    stop without editing any target.
-2. For each target file, read it and reconcile against that endpoint model set:
-   - **Model list.** Every endpoint model id must have exactly one entry.
-     - Missing → add an entry, copying the shape of a sibling entry (same
-       `url`/provider fields, `vision`/`input`/`toolCalling`
-       per the model's real capabilities — check the models.ini preset for an
-       `mmproj` line to decide vision/image support). For OpenCode, set both
-       the object key and `name` to the exact models.ini section name. For pi's
-       `name`,
-       apply the derivation rule in "pi `name` field must stay short"
-       above — do not copy the id verbatim.
-     - Present in the config but gone from the endpoint → remove it.
-     - Renamed → treat as remove-old + add-new (ids must match exactly).
-   - **Context field.** Preserve existing values; use the documented `8192`
-       fallback for newly discovered entries because Unsloth does not currently
-       return context size.
-   - **OpenCode names.** For every present entry, set `models[id].name` to the
-     exact `models.ini` section name as well; correct shortened or friendly
-     names, including entries that otherwise need no change.
-3. **Thinking fields are NOT derived from models.ini.** Reconcile pi's
-   `thinkingCompat`/`compat`, `thinkingLevelMap`, `settings.json`'s
-   `modelThinkingLevels`, and the fallback `defaultThinkingLevel` as described
-   above; verify template/server support and flag uncertain choices instead of
-   guessing.
-4. **Output-token fields are NOT derived from models.ini.** `maxOutputTokens`
-   encodes a deliberate per-tool choice. Leave it as it is. The one exception:
-   VS Code's `maxInputTokens` **is** derived (`ctx-size − maxOutputTokens`), so
-   recompute it whenever either input changes, using that entry's existing
-   `maxOutputTokens`.
-5. Edit the JSON in place with targeted replacements — do not regenerate/reindent
-   the whole file. Preserve existing key order, 2-space indentation, and any
-   blank lines so the diff stays minimal.
+2. Present a **multi-select** question to the user, listing all endpoint model
+   ids with brief descriptions (quant, vision, etc.). The user selects exactly
+   which models to sync. All other models (present in the configs but not
+   selected) will be **removed** from every target config file.
+3. Record the user's selection. If the user selects zero models, stop without
+   editing any target.
+
+### Phase 2 — Sync selected models to each target
+
+For each target file, read it and reconcile against the **user-selected** model
+set (not the full endpoint set):
+
+- **Model list.** Every selected endpoint model id must have exactly one entry.
+  - Missing → add an entry, copying the shape of a sibling entry (same
+    `url`/provider fields, `vision`/`input`/`toolCalling`
+    per the model's real capabilities — check the models.ini preset for an
+    `mmproj` line to decide vision/image support). For OpenCode, set both
+    the object key and `name` to the exact models.ini section name. For pi's
+    `name`,
+    apply the derivation rule in "pi `name` field must stay short"
+    above — do not copy the id verbatim.
+  - Present in the config but **not selected** → remove it entirely.
+  - Renamed → treat as remove-old + add-new (ids must match exactly).
+- **Context field.** Use the documented `8192` fallback for all entries
+  (selected or newly added), since Unsloth does not currently expose ctx-size.
+- **OpenCode names.** For every present entry, set `models[id].name` to the
+  exact `models.ini` section name as well; correct shortened or friendly
+  names, including entries that otherwise need no change.
+- **Thinking fields.** NOT derived from models.ini. Reconcile pi's
+  `thinkingCompat`/`compat`, `thinkingLevelMap`, `settings.json`'s
+  `modelThinkingLevels`, and the fallback `defaultThinkingLevel` as described
+  above; verify template/server support and flag uncertain choices instead of
+  guessing.
+- **Output-token fields.** NOT derived from models.ini. `maxOutputTokens`
+  encodes a deliberate per-tool choice. Leave it as it is. The one exception:
+  VS Code's `maxInputTokens` **is** derived (`ctx-size − maxOutputTokens`), so
+  recompute it whenever either input changes, using that entry's existing
+  `maxOutputTokens`.
+
+### Phase 3 — Edit configs in place
+
+Edit the JSON in place with targeted replacements — do not regenerate/reindent
+the whole file. Preserve existing key order, 2-space indentation, and any
+blank lines so the diff stays minimal.
 
 ## Verification
 
 After editing, re-read each target and confirm:
-- Its set of model ids matches Unsloth's `/v1/models` ids exactly (no extras,
-  none missing).
-- Existing context values were preserved; new entries use the documented
-  `8192` fallback and are flagged for review.
+- Its set of model ids matches the **user-selected** ids exactly (no extras,
+  none missing — i.e. the config now contains precisely the models the user
+  chose).
+- Existing context values were preserved for selected entries; new entries
+  use the documented `8192` fallback and are flagged for review.
 - OpenCode uses the exact models.ini section name as both each model key and
   its `name` value; no shortened aliases remain.
 - pi `models.json` has reviewed `thinkingCompat`/`compat` and
   `thinkingLevelMap` values for every affected model.
-- pi `settings.json` has no stale `modelThinkingLevels` keys, includes every
-  current `unsloth` model where appropriate, and its `defaultThinkingLevel`
-  is intentionally compatible with the model set.
+- pi `settings.json` has no stale `modelThinkingLevels` keys (removed any keys
+  for models not selected), includes every selected `unsloth` model where
+  appropriate, and its `defaultThinkingLevel` is intentionally compatible with
+  the model set.
 
 Report a table: `model id | endpoint metadata | VS Code maxInputTokens`, and
-flag any new model using fallback metadata.
+flag any model using fallback metadata (all new/selected entries).
 
 ## Notes
 
@@ -192,7 +210,7 @@ flag any new model using fallback metadata.
   Only `models.ini` / repo files get committed — and only if the user asked.
 - If a target file is missing or unreadable, report it and skip that target
   rather than failing the whole run.
-- Watch for the common drift: a preset whose `ctx-size` was bumped in models.ini
-  but not mirrored (e.g. `Qwen3.6-27B-UD-Q4_K_XL` left at an old `131072`). That
-  causes prompt truncation / errors in the downstream tool, which is the whole
-  reason this sync exists.
+- The multi-select prompt uses check-box style — the user can pick any subset
+  of the available models. "Select all" and "Select none" options are available.
+- This skill intentionally shifts from automatic sync to **guarded sync**,
+  giving you control over which models appear in your tools.
